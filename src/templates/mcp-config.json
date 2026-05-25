@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "codememory": {
+      "command": "npx",
+      "args": ["-y", "@opvoid/codememory"]
+    }
+  }
+}
