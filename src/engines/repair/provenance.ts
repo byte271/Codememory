@@ -246,6 +246,7 @@ export class RepairProvenance {
       status: row.status,
       parent_intent_id: row.parent_intent_id,
       replacement_reason: row.replacement_reason,
+      project_id: null,
     };
 
     return { resolution, intent, failure, match_context: matchContext };

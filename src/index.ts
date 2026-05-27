@@ -9,6 +9,14 @@ export { IntentExtractor } from './engines/intent/extractor.js';
 export { IntentBinder } from './engines/intent/binder.js';
 export { IntentSearchEngine } from './engines/intent/search.js';
 export { LineageEngine } from './engines/intent/lineage.js';
+
+// v0.3.0 exports
+export { AutoHealEngine } from './engines/heal/auto-heal.js';
+export { PredictiveGuard } from './engines/guard/predictive-guard.js';
+export { CrossProjectGraph } from './engines/knowledge/cross-project.js';
+export { BehaviorTimelineAggregator } from './engines/timeline/aggregator.js';
+export { DashboardServer } from './web/server.js';
+
 export { DatabaseManager } from './store/database.js';
 export { logger } from './utils/logger.js';
 export { sanitizer } from './utils/sanitizer.js';

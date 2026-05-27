@@ -2,7 +2,7 @@
   "mcpServers": {
     "codememory": {
       "command": "npx",
-      "args": ["-y", "@opvoid/codememory@0.2.1"]
+      "args": ["-y", "@opvoid/codememory@0.3.0"]
     }
   }
 }

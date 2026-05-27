@@ -171,6 +171,7 @@ export class IntentSearchEngine {
       status: row.status as IntentRecord['status'],
       parent_intent_id: row.parent_intent_id,
       replacement_reason: row.replacement_reason,
+      project_id: null,
     };
     return {
       record,

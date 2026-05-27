@@ -26,8 +26,8 @@ export class IntentQueries {
    */
   public insert(record: IntentRecord): void {
     this.manager.prepare(`
-      INSERT INTO intent_records (id, created_at, file_path, prompt, generated, ai_tool, language, status, parent_intent_id, replacement_reason)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO intent_records (id, created_at, file_path, prompt, generated, ai_tool, language, status, parent_intent_id, replacement_reason, project_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       record.id,
       record.created_at,
@@ -39,6 +39,7 @@ export class IntentQueries {
       record.status,
       record.parent_intent_id ?? null,
       record.replacement_reason ?? '',
+      record.project_id ?? null,
     );
   }
 

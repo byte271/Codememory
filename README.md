@@ -43,6 +43,14 @@ same code, Codememory returns a **repair brief** that fuses intent +
 runtime + failure + a suggested fix approach so the next edit is
 informed instead of speculative.
 
+Codememory goes beyond passive memory — it actively **guards** against
+reintroducing known bugs (proactive guardrails), **auto-heals** failures
+by generating patches from historical memory (autonomous self-repair),
+and **cross-references** learnings from all your projects (cross-project
+knowledge graph). A built-in web **dashboard** visualizes the full
+lifecycle of your code: error trends, fix effectiveness, and a
+chronological event timeline.
+
 ## Setup (60 seconds)
 
 ```bash
@@ -50,23 +58,56 @@ npm install -g @opvoid/codememory
 codememory init
 ```
 
-Then add to your project's `CLAUDE.md`:
+Then add to your project's agent rules file:
 
 ```
+# Claude Code: add to CLAUDE.md
+# Cursor / Windsurf: add to .cursorrules or .windsurfrules
+# Codex: add to CODEX.md
+
 @include CODEMEMORY.md
 ```
 
-That's it. Claude Code will automatically capture intent when it writes
+That's it. Your AI agent will automatically capture intent when it writes
 code and fetch repair briefs before fixing bugs.
 
 ## What `codememory init` creates
 
 - `.mcp.json` — registers Codememory as an MCP server for your provider (Claude Code, Cursor, Codex, or Windsurf).
 - `CODEMEMORY.md` — rules that tell the AI agent when to call which tool:
-  `capture_intent`, `record_runtime`, `log_failure`, `log_resolution`,
-  `query_memory`, `get_repair_brief`, and `get_code_lineage`.
+  all 11 MCP tools covering capture, runtime, failure, resolution,
+  query, repair, lineage, auto-heal, guardrails, and cross-project search.
 
 Existing files are preserved by default. Pass `--force` to overwrite.
+
+## CLI commands
+
+| Command | What it does |
+|---------|-------------|
+| `codememory init` | Scaffold `.mcp.json` + `CODEMEMORY.md` for your provider |
+| `codememory init --provider cursor` | Scaffold for Cursor, Codex, or Windsurf instead of Claude Code |
+| `codememory init --force` | Overwrite existing config and rules files |
+| `codememory` | Start the MCP server (with auto-heal worker + optional dashboard) |
+| `codememory dashboard` | Start the Behavioral Time Machine web UI standalone |
+| `codememory heal` | Manually trigger auto-healing for all unresolved failures |
+| `codememory --version` | Print the version |
+| `codememory --help` | Print available commands |
+
+## Configuration
+
+All configuration is via environment variables. None are required —
+everything has sensible defaults.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CODEMEMORY_AUTOHEAL_ENABLED` | `true` | Enable background auto-heal worker |
+| `CODEMEMORY_AUTOHEAL_POLL_MS` | `30000` | Worker polling interval in milliseconds |
+| `CODEMEMORY_AUTOHEAL_MAX_CONCURRENT` | `3` | Max concurrent auto-heal tasks |
+| `CODEMEMORY_DASHBOARD_ENABLED` | `false` | Enable the web dashboard (opt-in) |
+| `CODEMEMORY_DASHBOARD_PORT` | `4210` | Dashboard HTTP port |
+| `CODEMEMORY_GUARD_CONFIDENCE_THRESHOLD` | `0.3` | Minimum confidence to surface guard warnings |
+| `CODEMEMORY_MAX_SNAPSHOTS_PER_INTENT` | `100` | Max runtime snapshots retained per intent |
+| `LOG_LEVEL` | `info` | Log verbosity (trace/debug/info/warn/error) |
 
 ## CJS vs ESM
 
@@ -82,7 +123,7 @@ import { RuntimeObserver } from '@opvoid/codememory'
 const observed = observer.observe(yourFunction, 'functionName')
 ```
 
-## The MCP tools (all 7)
+## The MCP tools (all 11)
 
 | Tool | Purpose |
 |------|---------|
@@ -93,6 +134,10 @@ const observed = observer.observe(yourFunction, 'functionName')
 | `query_memory` | Search intents via **FTS5 natural-language search** (keyword/semantic) or filtered query (file_path, status, since). Returns true pagination totals. |
 | `get_repair_brief` | Assemble a structured repair context: intent + runtime traces + failures + **proven fixes** from similar past errors. |
 | `get_code_lineage` | Trace the full generational history of code (parent → child → grandchild chains). |
+| `auto_heal_trigger` | **v0.3** — Trigger autonomous self-repair for a logged failure; generates a patch from historical memory. |
+| `auto_heal_status` | **v0.3** — Check the status of an auto-heal task (pending/running/completed/failed). |
+| `predict_issue` | **v0.3** — Proactive guardrails: check proposed code BEFORE writing to prevent re-introducing known bugs. |
+| `cross_project_search` | **v0.3** — Search failures and proven fixes across ALL your Codememory projects. |
 
 ## The repair brief
 
@@ -106,6 +151,55 @@ When something breaks, instead of asking the AI to guess, Codememory gives it:
 
 That brief is fetched through one MCP tool call, before any edit, so the
 agent stops re-deriving context that was already paid for once.
+
+## Autonomous self-healing
+
+When a failure is logged, Codememory's **auto-heal worker** (background
+thread) polls for unresolved failures and automatically generates repair
+patches from historical memory. Each patch is a comment-annotated diff
+built from proven fixes that resolved the same shape of failure before.
+
+The agent can trigger healing explicitly via `auto_heal_trigger` or let
+the background worker handle it. Either way, `auto_heal_status` reports
+the task state and the generated patch when ready.
+
+## Proactive guardrails
+
+Before AI writes a single line, `predict_issue` checks the proposed
+approach against all known failure patterns — both in the current project
+and across any other project sharing the Codememory database. It returns
+warnings with confidence levels and risk assessment. This flips the script
+from post-mortem bug-fixing to preemptive bug-prevention.
+
+Guard rules are learned automatically: when a failure is resolved, the
+resolution's approach and context are distilled into a reusable rule that
+fires on any future code matching the same pattern.
+
+## Cross-project knowledge graph
+
+Codememory explicitly models your projects (`projects` table). Intents
+link to their parent project. When you call `cross_project_search`, it
+finds failures and proven fixes across every project you've registered —
+meaning a bug you fixed once in one repo never needs to be rediscovered
+in another. Guard rules learned in Project A automatically apply to
+Project B.
+
+## Behavioral Time Machine (dashboard)
+
+```bash
+codememory dashboard
+```
+
+A zero-dependency, single-file HTML dashboard served on `localhost:4210`
+visualizes the full lifecycle of your code:
+
+- **Error rate trends** — 90-day rolling window with moving averages
+- **Fix effectiveness** — which fix approaches succeed most often
+- **Event timeline** — chronological view with filtering tabs (intents,
+  failures, resolutions, runtime snapshots)
+- Dark-themed, auto-refreshing, no external CDN dependencies
+
+All data is local. Nothing leaves your machine.
 
 ## Media
 

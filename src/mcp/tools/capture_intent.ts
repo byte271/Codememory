@@ -2,6 +2,7 @@ import { CaptureIntentInput, CaptureIntentOutput, IntentRecord } from '../../typ
 import { IntentQueries } from '../../store/queries/intent.js';
 import { IntentExtractor } from '../../engines/intent/extractor.js';
 import { IntentBinder } from '../../engines/intent/binder.js';
+import { CrossProjectGraph } from '../../engines/knowledge/cross-project.js';
 import { hash } from '../../utils/hash.js';
 import { logger } from '../../utils/logger.js';
 import { isSqliteUniqueConstraint } from '../../utils/sqlite.js';
@@ -22,13 +23,16 @@ export class CaptureIntentTool {
   private queries: IntentQueries;
   private extractor: IntentExtractor;
   private binder: IntentBinder;
+  private crossProject: CrossProjectGraph;
 
   /**
-   * Initializes the tool with intent queries.
+   * Initializes the tool with intent queries and cross-project graph.
    * @param queries The queries to use for database operations.
+   * @param crossProject Cross-project knowledge graph for project registration.
    */
-  constructor(queries: IntentQueries) {
+  constructor(queries: IntentQueries, crossProject: CrossProjectGraph) {
     this.queries = queries;
+    this.crossProject = crossProject;
     this.extractor = new IntentExtractor();
     this.binder = new IntentBinder();
   }
@@ -71,6 +75,14 @@ export class CaptureIntentTool {
         }
       }
 
+      // v0.3: Register project for cross-project knowledge sharing
+      let projectId: string | null = null;
+      if (input.project_name) {
+        const rootPath = process.cwd();
+        const project = this.crossProject.registerProject(input.project_name, rootPath);
+        projectId = project.id;
+      }
+
       const record: IntentRecord = {
         id: memoryId,
         created_at: timestamp,
@@ -82,6 +94,7 @@ export class CaptureIntentTool {
         status: 'active',
         parent_intent_id: input.parent_intent_id ?? null,
         replacement_reason: input.replacement_reason ?? '',
+        project_id: projectId,
       };
 
       // v0.2 lineage: wrap insert + markReplaced in a transaction so

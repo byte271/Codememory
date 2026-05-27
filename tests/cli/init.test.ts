@@ -10,6 +10,14 @@ import {
 } from '../../src/cli/init.js';
 import { parseProvider } from '../../src/bin.js';
 
+/** Read the current package version from package.json. */
+function getPackageVersion(): string {
+  const pkg = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../../package.json'), 'utf8')
+  ) as { version: string };
+  return pkg.version;
+}
+
 /**
  * Tests for the `codememory init` command. We exercise the pure {@link runInit}
  * function against a fresh temp directory each test so we never touch the
@@ -93,7 +101,7 @@ describe('codememory init', () => {
     expect(parsed.mcpServers).toBeDefined();
     expect(parsed.mcpServers.codememory).toBeDefined();
     expect(parsed.mcpServers.codememory.command).toBe('npx');
-    expect(parsed.mcpServers.codememory.args).toContain('@opvoid/codememory@0.2.1');
+    expect(parsed.mcpServers.codememory.args).toContain(`@opvoid/codememory@${getPackageVersion()}`);
   });
 
   it('writes CODEMEMORY.md with all tool names and clear trigger rules', () => {

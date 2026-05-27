@@ -3,6 +3,7 @@ import { join } from 'path';
 import * as initialMigration from './migrations/001_initial.js';
 import * as cascadeMigration from './migrations/002_cascade_fks.js';
 import * as provenanceMigration from './migrations/003_provenance_fts_lineage.js';
+import * as v3FeaturesMigration from './migrations/004_v3_features.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -22,9 +23,11 @@ interface Migration {
  */
 export class DatabaseManager {
   private db: Database.Database;
-  private migrations: Migration[] = [initialMigration, cascadeMigration, provenanceMigration];
-  /** Cached prepared statements — avoids re-compiling SQL on every call. */
+  private migrations: Migration[] = [initialMigration, cascadeMigration, provenanceMigration, v3FeaturesMigration];
+  /** Cached prepared statements with LRU eviction to bound memory. */
   private stmtCache = new Map<string, Database.Statement>();
+  /** Maximum number of cached statements before LRU eviction kicks in. */
+  private static readonly STMT_CACHE_MAX = 100;
 
   /**
    * Initializes the database connection and runs all pending migrations.
@@ -51,7 +54,8 @@ export class DatabaseManager {
   /**
    * Returns a cached prepared statement for the given SQL.
    * Compiles the statement on first use and reuses it on subsequent calls.
-   * This avoids the overhead of re-parsing SQL on every query.
+   * Uses simple LRU eviction: when cache exceeds STMT_CACHE_MAX,
+   * removes the oldest (least recently used) entry.
    *
    * @param sql The SQL string to prepare.
    * @returns The cached prepared statement.
@@ -60,6 +64,13 @@ export class DatabaseManager {
     let stmt = this.stmtCache.get(sql);
     if (!stmt) {
       stmt = this.db.prepare(sql);
+      // LRU eviction: delete-then-reinsert moves this key to the "most recent" position.
+      // When the cache grows too large, remove the oldest entry (first inserted).
+      this.stmtCache.delete(sql);
+      if (this.stmtCache.size >= DatabaseManager.STMT_CACHE_MAX) {
+        const oldest = this.stmtCache.keys().next().value;
+        if (oldest) this.stmtCache.delete(oldest);
+      }
       this.stmtCache.set(sql, stmt);
     }
     return stmt;

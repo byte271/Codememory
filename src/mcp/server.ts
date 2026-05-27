@@ -14,24 +14,71 @@ import { LogResolutionTool } from './tools/log_resolution.js';
 import { GetRepairBriefTool } from './tools/get_repair_brief.js';
 import { GetCodeLineageTool } from './tools/get_code_lineage.js';
 import { QueryMemoryTool } from './tools/query_memory.js';
+import { AutoHealTriggerTool } from './tools/auto_heal_trigger.js';
+import { AutoHealStatusTool } from './tools/auto_heal_status.js';
+import { PredictIssueTool } from './tools/predict_issue.js';
+import { CrossProjectSearchTool } from './tools/cross_project_search.js';
 import { RepairAssembler } from '../engines/repair/assembler.js';
 import { RepairProvenance } from '../engines/repair/provenance.js';
 import { LineageEngine } from '../engines/intent/lineage.js';
+import { AutoHealEngine } from '../engines/heal/auto-heal.js';
+import { PredictiveGuard } from '../engines/guard/predictive-guard.js';
+import { CrossProjectGraph } from '../engines/knowledge/cross-project.js';
+import { DashboardServer } from '../web/server.js';
 import { logger } from '../utils/logger.js';
-import { CaptureIntentInput, RecordRuntimeInput, LogFailureInput, QueryMemoryInput, LogResolutionInput, GetCodeLineageInput } from '../types/index.js';
+import {
+  CaptureIntentInput,
+  RecordRuntimeInput,
+  LogFailureInput,
+  QueryMemoryInput,
+  LogResolutionInput,
+  GetCodeLineageInput,
+  AutoHealTriggerInput,
+  AutoHealStatusInput,
+  PredictIssueInput,
+  CrossProjectSearchInput,
+} from '../types/index.js';
 import { MCP_TOOL_NAMES } from './tool-names.js';
 import { formatToolError } from '../utils/errors.js';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
+import { isAutoHealEnabled, isDashboardEnabled, getDashboardPort } from '../config.js';
+
+/** Resolve worker script path across CJS/ESM builds. */
+function resolveWorkerPath(): string {
+  let cjsPath: string | null = null;
+  if (typeof __dirname !== 'undefined') {
+    cjsPath = join(__dirname, '..', 'engines', 'heal', 'worker.js');
+    if (existsSync(cjsPath)) return cjsPath;
+  }
+  // ESM fallback
+  // eslint-disable-next-line no-eval
+  const url: string = eval('import.meta.url') as string;
+  const esmPath = join(dirname(fileURLToPath(url)), '..', 'engines', 'heal', 'worker.js');
+  if (existsSync(esmPath)) return esmPath;
+  // Last-resort fallback: src layout for tsx/vitest
+  const srcPath = join(dirname(fileURLToPath(url)), 'engines', 'heal', 'worker.js');
+  if (existsSync(srcPath)) return srcPath;
+  const lookedIn = [esmPath, srcPath];
+  if (cjsPath) lookedIn.unshift(cjsPath);
+  throw new Error(
+    `Auto-heal worker script not found. Looked in:\n  ${lookedIn.join('\n  ')}`
+  );
+}
 
 /**
  * MCP Server for Codememory.
  *
- * v0.2.1 adds:
- *   - log_resolution   — link a resolved failure to the intent that fixed it
- *   - get_code_lineage — trace full generational history of generated code
- *   - query_memory     — enhanced with FTS5 natural-language search
- *   - get_repair_brief — enhanced with proven fix suggestions
+ * v0.3.0 adds:
+ *   - auto_heal_trigger      — trigger autonomous self-repair for a failure
+ *   - auto_heal_status       — check the status of an auto-heal task
+ *   - predict_issue          — proactive guardrails: check code before bugs happen
+ *   - cross_project_search   — search across all projects for shared learnings
+ *   - Background worker      — automatic failure polling and self-healing
+ *   - Web dashboard          — Behavioral Time Machine UI (opt-in)
  *
- * @security v0.2.1: Codememory does NOT provide per-client authentication or
+ * @security v0.3.0: Codememory does NOT provide per-client authentication or
  *   data isolation. All MCP clients connected to the same server share a single
  *   SQLite database with full read/write access. This is intentional for local
  *   single-user workflows. Multi-tenant deployments would require client identity
@@ -49,6 +96,18 @@ export class CodememoryServer {
   private getRepairBriefTool: GetRepairBriefTool;
   private getCodeLineageTool: GetCodeLineageTool;
   private queryMemoryTool: QueryMemoryTool;
+  private autoHealTriggerTool: AutoHealTriggerTool;
+  private autoHealStatusTool: AutoHealStatusTool;
+  private predictIssueTool: PredictIssueTool;
+  private crossProjectSearchTool: CrossProjectSearchTool;
+
+  /** v0.3 engines */
+  private autoHealEngine: AutoHealEngine;
+  private predictiveGuard: PredictiveGuard;
+  private crossProjectGraph: CrossProjectGraph;
+
+  /** v0.3 web dashboard */
+  private dashboard: DashboardServer | null = null;
 
   /**
    * Initializes the MCP server and all its tools.
@@ -57,7 +116,7 @@ export class CodememoryServer {
     this.server = new Server(
       {
         name: 'codememory',
-        version: '0.2.1',
+        version: '0.3.0',
       },
       {
         capabilities: {
@@ -73,13 +132,27 @@ export class CodememoryServer {
     const repairAssembler = new RepairAssembler(intentQueries, runtimeQueries, provenance);
     const lineageEngine = new LineageEngine(this.dbManager);
 
-    this.captureIntentTool = new CaptureIntentTool(intentQueries);
+    // v0.3 engines
+    this.autoHealEngine = new AutoHealEngine(
+      this.dbManager, intentQueries, runtimeQueries, repairAssembler
+    );
+    this.predictiveGuard = new PredictiveGuard(this.dbManager);
+    this.crossProjectGraph = new CrossProjectGraph(this.dbManager);
+
+    // v0.1–v0.2 tools
+    this.captureIntentTool = new CaptureIntentTool(intentQueries, this.crossProjectGraph);
     this.recordRuntimeTool = new RecordRuntimeTool(intentQueries, runtimeQueries);
     this.logFailureTool = new LogFailureTool(intentQueries, runtimeQueries);
-    this.logResolutionTool = new LogResolutionTool(provenance, intentQueries, runtimeQueries);
+    this.logResolutionTool = new LogResolutionTool(provenance, intentQueries, runtimeQueries, this.predictiveGuard);
     this.getRepairBriefTool = new GetRepairBriefTool(repairAssembler);
     this.getCodeLineageTool = new GetCodeLineageTool(lineageEngine);
     this.queryMemoryTool = new QueryMemoryTool(intentQueries, this.dbManager);
+
+    // v0.3 tools
+    this.autoHealTriggerTool = new AutoHealTriggerTool(this.autoHealEngine, runtimeQueries);
+    this.autoHealStatusTool = new AutoHealStatusTool(this.autoHealEngine, runtimeQueries);
+    this.predictIssueTool = new PredictIssueTool(this.predictiveGuard, this.crossProjectGraph);
+    this.crossProjectSearchTool = new CrossProjectSearchTool(this.crossProjectGraph);
 
     this.setupTools();
   }
@@ -104,6 +177,7 @@ export class CodememoryServer {
                 language: { type: 'string' },
                 parent_intent_id: { type: 'string', description: 'The memory_id of the intent being replaced (v0.2 lineage).' },
                 replacement_reason: { type: 'string', description: 'Why the previous code is being replaced (v0.2 lineage).' },
+                project_name: { type: 'string', description: 'Project name for cross-project knowledge sharing (v0.3).' },
               },
               required: ['prompt', 'generated_code', 'file_path', 'ai_tool', 'language'],
             },
@@ -198,6 +272,64 @@ export class CodememoryServer {
               },
             },
           },
+          // ── v0.3.0 tools ──────────────────────────────────────────
+          {
+            name: MCP_TOOL_NAMES.auto_heal_trigger,
+            description:
+              'v0.3: Triggers autonomous self-repair for a failure. ' +
+              'Codememory generates a patch from historical memory and proven fixes, ' +
+              'validates it, and returns the auto-heal task for review.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                failure_id: { type: 'string', description: 'The failure to auto-heal.' },
+              },
+              required: ['failure_id'],
+            },
+          },
+          {
+            name: MCP_TOOL_NAMES.auto_heal_status,
+            description:
+              'v0.3: Checks the status of an auto-heal task. ' +
+              'Returns the generated patch, test results, and PR URL if available.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                task_id: { type: 'string', description: 'The auto-heal task ID to check.' },
+              },
+              required: ['task_id'],
+            },
+          },
+          {
+            name: MCP_TOOL_NAMES.predict_issue,
+            description:
+              'v0.3: Proactive Guardrails — check your code approach BEFORE writing. ' +
+              'Returns warnings from learned failure patterns across all projects. ' +
+              'Transforms post-mortem repair into preemptive prevention.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                proposed_code: { type: 'string', description: 'The code you are about to generate.' },
+                description: { type: 'string', description: 'Natural language description of the task.' },
+                file_path: { type: 'string', description: 'Target file path for context-aware predictions.' },
+                project_name: { type: 'string', description: 'Project name for cross-project rule matching.' },
+              },
+            },
+          },
+          {
+            name: MCP_TOOL_NAMES.cross_project_search,
+            description:
+              'v0.3: Cross-Project Knowledge Graph — search failures and fixes across ALL your projects. ' +
+              'Applies lessons learned in Project A to prevent bugs in Project B.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: 'Error pattern or description to search across projects.' },
+                limit: { type: 'number', description: 'Max results (default 5).' },
+              },
+              required: ['query'],
+            },
+          },
         ],
       };
     });
@@ -229,6 +361,19 @@ export class CodememoryServer {
           const input = args as unknown as QueryMemoryInput;
           return { content: [{ type: 'text', text: JSON.stringify(await this.queryMemoryTool.execute(input)) }] };
         }
+        // ── v0.3.0 tools ──────────────────────────────────────────
+        if (name === MCP_TOOL_NAMES.auto_heal_trigger) {
+          return { content: [{ type: 'text', text: JSON.stringify(await this.autoHealTriggerTool.execute(args as unknown as AutoHealTriggerInput)) }] };
+        }
+        if (name === MCP_TOOL_NAMES.auto_heal_status) {
+          return { content: [{ type: 'text', text: JSON.stringify(await this.autoHealStatusTool.execute(args as unknown as AutoHealStatusInput)) }] };
+        }
+        if (name === MCP_TOOL_NAMES.predict_issue) {
+          return { content: [{ type: 'text', text: JSON.stringify(await this.predictIssueTool.execute(args as unknown as PredictIssueInput)) }] };
+        }
+        if (name === MCP_TOOL_NAMES.cross_project_search) {
+          return { content: [{ type: 'text', text: JSON.stringify(await this.crossProjectSearchTool.execute(args as unknown as CrossProjectSearchInput)) }] };
+        }
 
         throw new Error(`Unknown tool: ${name}`);
       } catch (error) {
@@ -242,14 +387,30 @@ export class CodememoryServer {
   }
 
   /**
-   * Starts the MCP server using the Stdio transport.
+   * Starts the MCP server, auto-heal worker, and optionally the dashboard.
+   *
    * Follows Rule 06: Logs initialization status.
    */
   public async run(): Promise<void> {
     try {
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
-      logger.info('Codememory MCP server running on stdio');
+      logger.info('Codememory MCP server running on stdio (v0.3.0)');
+
+      // Start auto-heal background worker
+      if (isAutoHealEnabled()) {
+        try {
+          this.autoHealEngine.startWorker(resolveWorkerPath());
+        } catch (error) {
+          logger.error('Failed to start auto-heal worker', error);
+        }
+      }
+
+      // Start dashboard if enabled
+      if (isDashboardEnabled()) {
+        this.dashboard = new DashboardServer(this.dbManager, getDashboardPort());
+        this.dashboard.start();
+      }
     } catch (error) {
       logger.error('Failed to start Codememory server', error);
       throw error;
@@ -257,15 +418,15 @@ export class CodememoryServer {
   }
 
   /**
-   * Gracefully shuts down the server, checkpoints the WAL, and closes the
-   * database. Safe to call multiple times (idempotent).
-   *
-   * Called on SIGINT/SIGTERM so the WAL is flushed and -wal/-shm files
-   * are cleaned up rather than left behind on disk.
+   * Gracefully shuts down the server, worker, dashboard, and database.
    */
   public async shutdown(): Promise<void> {
     try {
       logger.info('Codememory server shutting down...');
+      await this.autoHealEngine.stopWorker();
+      if (this.dashboard) {
+        await this.dashboard.stop();
+      }
       await this.server.close();
       this.dbManager.close();
       logger.info('Codememory server shut down cleanly');

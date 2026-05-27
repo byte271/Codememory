@@ -4,6 +4,7 @@ import {
   Resolution,
 } from '../../types/index.js';
 import { RepairProvenance } from '../../engines/repair/provenance.js';
+import { PredictiveGuard } from '../../engines/guard/predictive-guard.js';
 import { IntentQueries } from '../../store/queries/intent.js';
 import { RuntimeQueries } from '../../store/queries/runtime.js';
 import { assertIntentExists } from '../../utils/validate-intent.js';
@@ -33,20 +34,24 @@ export class LogResolutionTool {
   private provenance: RepairProvenance;
   private intentQueries: IntentQueries;
   private runtimeQueries: RuntimeQueries;
+  private guard: PredictiveGuard;
 
   /**
    * @param provenance    Repair provenance engine for recording resolutions.
    * @param intentQueries Validates the fixing intent exists.
    * @param runtimeQueries Validates the failure exists.
+   * @param guard         Predictive guard for learning from resolutions (v0.3).
    */
   constructor(
     provenance: RepairProvenance,
     intentQueries: IntentQueries,
-    runtimeQueries: RuntimeQueries
+    runtimeQueries: RuntimeQueries,
+    guard: PredictiveGuard
   ) {
     this.provenance = provenance;
     this.intentQueries = intentQueries;
     this.runtimeQueries = runtimeQueries;
+    this.guard = guard;
   }
 
   /**
@@ -115,6 +120,20 @@ export class LogResolutionTool {
         failureId: input.failure_id,
         fixingIntentId: input.fixing_intent_id,
       });
+
+      // v0.3: Learn guard rule from this resolution
+      try {
+        const intent = this.intentQueries.getById(input.fixing_intent_id);
+        const projectId = intent?.project_id ?? null;
+        this.guard.learnFromResolution(
+          failure,
+          input.approach ?? 'manual fix',
+          projectId
+        );
+      } catch (err) {
+        // Guard learning is best-effort; never fail the resolution for it
+        logger.warn('Failed to learn guard rule from resolution', { error: err instanceof Error ? err.message : String(err) });
+      }
 
       return {
         resolution_id: resolutionId,

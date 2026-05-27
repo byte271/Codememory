@@ -4,6 +4,92 @@ All notable changes to Codememory are documented in this file.
 
 ---
 
+## [v0.3.0] — 2026-05-27
+
+### 🚀 Major Features
+
+- **🤖 Autonomous Self-Healing (Auto-Repair Loop)**: When a runtime error is captured, Codememory automatically generates a repair brief from historical memory, produces a comment-annotated patch from proven fixes, and marks the failure for resolution. A background worker thread polls for unresolved failures and triggers auto-heal tasks on a configurable interval.
+- **🛡️ Proactive Guardrails (Predictive Safety Barriers)**: Before AI generates code, the guard engine checks the proposed approach against known failure patterns using FTS5 full-text search on `guard_rules`. Returns warnings with confidence levels and suggested alternatives — transforming post-mortem repair into preemptive prevention.
+- **🔗 Cross-Project Knowledge Graph**: Projects are now explicitly registered with the `projects` table. Intents can link to projects, and `cross_project_search` finds failures and proven fixes across all repositories. Guard rules learned in Project A automatically apply to Project B.
+- **⏱️ Behavioral Time Machine (Web Dashboard)**: An embedded Express server (zero-dependency, single-file HTML) serves a dark-themed dashboard on `localhost:4210`. Visualizes the full "life trajectory" of code: error rate trends, fix effectiveness, chronological event timeline with filtering tabs.
+
+### Database
+
+- **Migration 004**: Added `projects`, `auto_heal_tasks`, `guard_rules`, `guard_predictions` tables, and `guard_rules_fts` virtual table. Added `project_id` column to `intent_records`.
+
+### New MCP Tools
+
+- **`auto_heal_trigger`**: Queues and executes an auto-heal task for a specific failure, returning the generated patch.
+- **`auto_heal_status`**: Checks the status of an auto-heal task (pending/running/completed/failed) with failure context.
+- **`predict_issue`**: Runs guard analysis on proposed code before it's written. Returns warnings with risk level and cross-project context.
+- **`cross_project_search`**: Searches failures and resolutions across all registered projects for shared learnings.
+
+### CLI
+
+- **`codememory dashboard`**: Starts the Behavioral Time Machine web UI standalone.
+- **`codememory heal`**: Manually triggers auto-healing for unresolved failures.
+- **`codememory` (default)**: Now starts auto-heal worker and optional dashboard alongside the MCP server.
+
+### Configuration (env vars)
+
+- `CODEMEMORY_AUTOHEAL_ENABLED` — enable/disable background auto-heal worker (default: true)
+- `CODEMEMORY_AUTOHEAL_POLL_MS` — worker polling interval in ms (default: 30000)
+- `CODEMEMORY_AUTOHEAL_MAX_CONCURRENT` — max concurrent heal tasks (default: 3)
+- `CODEMEMORY_DASHBOARD_ENABLED` — enable the web UI (default: false, opt-in)
+- `CODEMEMORY_DASHBOARD_PORT` — dashboard port (default: 4210)
+- `CODEMEMORY_GUARD_CONFIDENCE_THRESHOLD` — minimum confidence to surface warnings (default: 0.3)
+
+### 🛡️ Bug Fixes & Stability
+
+#### Critical
+- **#1** Worker auto-heal loop now properly processes pending tasks: message handler responds to `check_pending` with `executeTask` error handling (#1, #7, #24).
+- **#2** Tasks are atomically marked `running` via `UPDATE ... RETURNING *` to prevent double-processing (#8).
+- **#3** `capture_intent` now registers projects and sets `project_id` on intents — the cross-project knowledge graph is no longer inert (#2, #14).
+- **#4** `predict_issue` now logs a warning when a project name isn't found instead of silently disabling cross-project rules (#3).
+- **#5** `auto_heal_trigger` returns the actual task status instead of hardcoded `'queued'` (#13).
+
+#### High
+- **#6** Resolution events in the dashboard timeline now JOIN to get `file_path` from `intent_records` (#4).
+- **#7** Worker script path resolution now uses `existsSync` with CJS/ESM/src fallbacks and graceful degradation (#5).
+- **#8** Dashboard `refreshInterval` is cleared on server shutdown to prevent timer leaks (#6).
+- **#9** `log_resolution` now triggers `guard.learnFromResolution` so resolved failures create reusable guard rules (#15, #20).
+- **#10** `CrossProjectGraph.getProjectById` is now a public method (#16).
+- **#11** Server now uses config functions (`isAutoHealEnabled`, `isDashboardEnabled`, `getDashboardPort`) instead of inline env reads (#17).
+
+#### Medium
+- **#12** `DatabaseManager.prepare` now has LRU statement cache eviction after 100 entries to prevent unbounded memory growth (#9).
+- **#13** `BehaviorTimelineAggregator.computeTrends` uses batched SQL GROUP BY instead of day-by-day iteration, with a 90-day cap (#19).
+- **#14** Guard FTS5 queries validate input before MATCH to prevent parse errors on unusual characters (#10).
+
+#### Low
+- **#15** `codememory heal` CLI now actually triggers auto-heal execution instead of just listing failures (#21).
+- **#16** Dashboard health endpoint simplified: `Request<never, never, never, never>` → `Request` (#23).
+- **#17** Non-null assertions removed from `auto-heal.ts` queueTask and executeTask — replaced with explicit null checks (#7, #24).
+- **#18** `getAutoHealPollMs()` wired into `auto-heal.ts` worker instead of reading `process.env` directly (#17).
+- **#19** `getAutoHealMaxConcurrent()` wired into `auto-heal.ts` worker handler instead of hardcoded `5`.
+- **#20** `getGuardConfidenceThreshold()` wired into `predictive-guard.ts` to filter low-confidence warnings; risk level now computed from filtered results.
+- **#21** `resolveWorkerPath()` error message builds path list conditionally instead of showing empty CJS path.
+- **#22** `AutoHealTriggerOutput.status` type widened from `'queued'` to `AutoHealTask['status']` to match actual return values.
+- **#23** `handleDashboard()` in `bin.ts` now uses `getDashboardPort()` from config instead of reading `process.env` directly.
+- **#24** Worker.ts shutdown handler now properly resolves the promise on `shutdown` message — fixes a hung worker thread on graceful shutdown.
+- **#25** Worker.ts listener leak fixed: normal poll timeout now removes the `onShutdown` listener to prevent accumulation across poll iterations.
+- **#26** `computeTrends()` SQL now uses parameterized `dayMs` instead of string interpolation.
+- **#27** `tests/cli/init.test.ts` version check now reads from `package.json` instead of hardcoded `0.2.1`.
+- **#28** `auto-heal.ts executeTask` now checks for `running` status in addition to `completed`/`failed` — prevents race condition when `auto_heal_trigger` and background worker concurrently process the same task.
+- **#29** `auto-heal.ts executeTask` error handler uses `error instanceof Error ? error.message : String(error)` instead of bare `String(error)` — prevents `[object Object]` in `error_log` column.
+- **#30** `auto_heal_trigger.ts` replaced hardcoded `estimated_ms: 5000` with actual measured execution time via `Date.now() - startedAt`.
+- **#31** `predictive-guard.ts predict()` log now shows `totalBeforeFilter` (warnings before threshold filtering) instead of redundant `filteredCount` (same as `warningCount` after filtering).
+- **#32** `web/server.ts` — DashboardServer constructor used direct `process.env` read for port fallback instead of `getDashboardPort()` from config. Replaced with `getDashboardPort()` import.
+- **#33** `log_resolution.ts` — Guard learning catch block used `String(err)` which could produce `[object Object]` in logs. Now uses `err instanceof Error ? err.message : String(err)`.
+- **#34** `bin.ts` — `handleHeal` CLI error output used `String(err)`. Fixed to `err instanceof Error ? err.message : String(err)`.
+- **#35** `predict_issue.ts` — Cross-project rules bypassed the guard confidence threshold filter, allowing low-confidence cross-project warnings to surface. Now filtered by `getGuardConfidenceThreshold()`.
+- **#36** `predict_issue.ts` — Cross-project rules only consulted when local guard patterns already fired (`result.warnings.length > 0` gate). Removed gate so cross-project knowledge always enriches predictions.
+- **#37** `predict_issue.ts` — `risk_level` and `match_count` didn't account for cross-project warnings, causing misleading output (e.g., `risk_level: 'none'` alongside active warnings). Now recalculated after cross-project enrichment.
+- **#38** `bin.ts` — ESLint `no-var-requires` was suppressed with wrong rule name (`@typescript-eslint/no-require-imports` instead of `@typescript-eslint/no-var-requires`), causing a lint warning on the `require('../package.json')` call. Fixed the disable comment rule name.
+- **#39** `predictive-guard.ts` — `extractPattern()` used `let cleaned` where `cleaned` is never reassigned. Changed to `const` (ESLint `prefer-const`).
+
+---
+
 ## [v0.2.1] — 2026-05-26
 
 ### 🚀 Features

@@ -2,8 +2,16 @@
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CodememoryServer } from './mcp/server.js';
+import { DashboardServer } from './web/server.js';
+import { DatabaseManager } from './store/database.js';
+import { AutoHealEngine } from './engines/heal/auto-heal.js';
+import { IntentQueries } from './store/queries/intent.js';
+import { RuntimeQueries } from './store/queries/runtime.js';
+import { RepairAssembler } from './engines/repair/assembler.js';
+import { RepairProvenance } from './engines/repair/provenance.js';
 import { logger } from './utils/logger.js';
 import { runInit, resolveTemplateDir, PROVIDERS, Provider } from './cli/init.js';
+import { getDashboardPort } from './config.js';
 
 /**
  * Resolve the directory of this binary at runtime, working under both
@@ -14,20 +22,13 @@ function getBinDir(): string {
   if (typeof __dirname !== 'undefined') {
     return __dirname;
   }
-  // ESM fallback. `import.meta.url` exists in ESM only; we must use eval()
-  // here because the source is compiled to CJS by tsup, which would choke on
-  // bare `import.meta.url` syntax at parse time. The eval defers parsing to
-  // runtime, where `import.meta.url` is only evaluated in the ESM code path.
   // eslint-disable-next-line no-eval
   const url: string = eval('import.meta.url') as string;
   return path.dirname(fileURLToPath(url));
 }
 
 /**
- * Print human-readable output for `codememory init`. The underlying
- * {@link runInit} returns structured data; this wrapper turns that into
- * a friendly console message. Kept intentionally tiny so tests can
- * exercise {@link runInit} directly without stubbing stdout.
+ * Print human-readable output for `codememory init`.
  */
 function printInitResult(
   created: string[],
@@ -56,10 +57,9 @@ function printInitResult(
 }
 
 /**
- * Parse the --provider flag from CLI args. Validates against known providers.
+ * Parse the --provider flag from CLI args.
  */
 export function parseProvider(argv: string[]): Provider {
-  // Support both `--provider cursor` and `--provider=cursor` forms.
   let value: string | undefined;
   let found = false;
 
@@ -68,7 +68,6 @@ export function parseProvider(argv: string[]): Provider {
     found = true;
     value = argv[idx + 1];
   } else {
-    // Check for --provider=<value> form.
     const eqArg = argv.find((a) => a.startsWith('--provider='));
     if (eqArg) {
       found = true;
@@ -92,8 +91,7 @@ export function parseProvider(argv: string[]): Provider {
 }
 
 /**
- * Handle the `init` subcommand. Generates provider-specific MCP config
- * and `CODEMEMORY.md` in the user's current working directory.
+ * Handle the `init` subcommand.
  */
 function handleInit(argv: string[]): void {
   if (argv.includes('--help') || argv.includes('-h')) {
@@ -118,27 +116,103 @@ Supported providers: ${Object.keys(PROVIDERS).join(', ')}
 }
 
 /**
+ * Handle the `dashboard` subcommand — starts the web UI standalone.
+ */
+function handleDashboard(): void {
+  const port = getDashboardPort();
+  const dbManager = new DatabaseManager();
+  const dashboard = new DashboardServer(dbManager, port);
+  dashboard.start();
+
+  console.log('');
+  console.log('🧠 Codememory Behavioral Time Machine');
+  console.log(`   Dashboard running at http://127.0.0.1:${port}`);
+  console.log('');
+  console.log('Press Ctrl+C to stop.');
+
+  const shutdown = async () => {
+    await dashboard.stop();
+    dbManager.close();
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
+/**
+ * Handle the `heal` subcommand — triggers auto-heal for unresolved failures.
+ */
+async function handleHeal(): Promise<void> {
+  const dbManager = new DatabaseManager();
+  const failures = dbManager.prepare(
+    "SELECT * FROM failures WHERE repair_status = 'unresolved' ORDER BY failed_at ASC LIMIT 10"
+  ).all() as Array<{ id: string; error_type: string; error_message: string }>;
+
+  if (failures.length === 0) {
+    console.log('No unresolved failures found. Everything is clean! ✨');
+    dbManager.close();
+    return;
+  }
+
+  console.log(`Found ${failures.length} unresolved failure(s):`);
+  for (const f of failures) {
+    console.log(`  - ${f.id}: ${f.error_type}: ${f.error_message.slice(0, 80)}`);
+  }
+  console.log('');
+
+  // v0.3: Actually trigger auto-heal for these failures
+  const intentQueries = new IntentQueries(dbManager);
+  const runtimeQueries = new RuntimeQueries(dbManager);
+  const provenance = new RepairProvenance(dbManager);
+  const assembler = new RepairAssembler(intentQueries, runtimeQueries, provenance);
+  const engine = new AutoHealEngine(dbManager, intentQueries, runtimeQueries, assembler);
+
+  console.log('Initiating auto-healing...');
+  for (const f of failures) {
+    try {
+      const task = engine.queueTask(f.id);
+      const completed = await engine.executeTask(task.id);
+      console.log(`  - ${f.id}: ${completed.status} — ${completed.status === 'completed' ? '✓' : '✗'}`);
+    } catch (err) {
+      console.error(`  - ${f.id}: error — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  console.log('');
+  console.log('Run the MCP server for continuous background auto-healing:');
+  console.log('  codememory');
+  dbManager.close();
+}
+
+/**
  * Print top-level CLI help.
  */
 function printHelp(): void {
-  console.log(`codememory - Runtime Behavior Memory for AI-generated code
+  console.log(`codememory v0.3.0 — Runtime Behavior Memory for AI-generated code
 
 Usage:
-  codememory                          Run the Codememory MCP server (stdio).
-  codememory init                     Scaffold config + rules (default: Claude Code).
-  codememory init --provider cursor   Scaffold for Cursor, Codex, Windsurf, etc.
-  codememory init --force             Overwrite existing files.
-  codememory --help                   Show this message.
+  codememory                              Run the MCP server (stdio).
+  codememory init                         Scaffold config + rules (default: Claude Code).
+  codememory init --provider cursor       Scaffold for Cursor, Codex, Windsurf, etc.
+  codememory init --force                 Overwrite existing files.
+  codememory dashboard                    Start the Behavioral Time Machine web UI.
+  codememory heal                         List unresolved failures for auto-healing.
+  codememory --help                       Show this message.
+
+v0.3.0 Features:
+  🤖 Autonomous Self-Healing         Auto-generate patches from failures
+  🛡️ Proactive Guardrails            Predict issues before code is written
+  🔗 Cross-Project Knowledge Graph   Share learnings across projects
+  ⏱️ Behavioral Time Machine         Visual timeline of code evolution
 `);
 }
 
 /**
  * CLI entry point. Dispatches on the first positional argument:
  *   - `init`            -> scaffold project files
+ *   - `dashboard`       -> start the visual timeline UI
+ *   - `heal`            -> list unresolved failures
  *   - `--help` / `-h`   -> print help
  *   - (none)            -> start the MCP server (default)
- *
- * Follows Rule 06: every failure path is logged with full context before exit.
  */
 async function run(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -149,6 +223,20 @@ async function run(): Promise<void> {
       handleInit(argv.slice(1));
       return;
     }
+    if (cmd === 'dashboard') {
+      handleDashboard();
+      return;
+    }
+    if (cmd === 'heal') {
+      await handleHeal();
+      return;
+    }
+    if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const pkg = require('../package.json') as { version: string };
+      console.log(pkg.version);
+      return;
+    }
     if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       printHelp();
       return;
@@ -156,7 +244,6 @@ async function run(): Promise<void> {
 
     const server = new CodememoryServer();
 
-    // Graceful shutdown on SIGINT (Ctrl+C) and SIGTERM.
     const shutdown = async () => {
       await server.shutdown();
       process.exit(0);

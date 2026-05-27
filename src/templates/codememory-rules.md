@@ -1,19 +1,23 @@
-# Codememory — Runtime Behavior Memory
+# Codememory v0.3.0 — Runtime Behavior Memory
 
 This project uses **Codememory** (`@opvoid/codememory`) as an MCP server. Codememory remembers
 *what AI-generated code was supposed to do*, *what it actually did at runtime*,
 and *what failed*. You — the AI agent — MUST use the Codememory MCP tools as
 described below. These rules are not optional.
 
-The seven Codememory tools registered via MCP are:
+The eleven Codememory tools registered via MCP are:
 
-- `capture_intent`   — record the intent behind code you generate
-- `record_runtime`   — record an observed function execution (entry/exit)
-- `log_failure`      — record an error tied to a `memory_id`
-- `log_resolution`   — link a resolved failure to the intent that fixed it
-- `query_memory`     — look up prior intents / runs / failures (v0.2: natural-language search)
-- `get_repair_brief` — assemble a structured repair context for a `memory_id`
-- `get_code_lineage` — trace the full generational history of generated code
+- `capture_intent`        — record the intent behind code you generate
+- `record_runtime`        — record an observed function execution (entry/exit)
+- `log_failure`           — record an error tied to a `memory_id`
+- `log_resolution`        — link a resolved failure to the intent that fixed it
+- `query_memory`          — look up prior intents / runs / failures (FTS5 search)
+- `get_repair_brief`      — assemble a structured repair context for a `memory_id`
+- `get_code_lineage`      — trace the full generational history of generated code
+- `auto_heal_trigger`     — v0.3: trigger autonomous self-repair for a failure
+- `auto_heal_status`      — v0.3: check the status of an auto-heal task
+- `predict_issue`         — v0.3: proactive guardrails — check code BEFORE writing
+- `cross_project_search`  — v0.3: search failures/fixes across ALL your projects
 
 ## Mandatory tool-call rules (act on these automatically)
 
@@ -25,7 +29,6 @@ natural-language query describing what you need. `query_memory` supports
 optional `status`, `since`, and `file_path` filters. Results are ranked by
 relevance with highlighted snippets. If a prior `memory_id` exists for that
 location, READ its intent and recent failures before producing new code.
-This prevents re-introducing bugs the user already hit.
 
 Trigger: any tool call that creates or edits a source file.
 Action: call `query_memory` first. Do not skip.
@@ -40,24 +43,20 @@ module, call `capture_intent` with:
 - `language`: the source language (e.g. `"typescript"`)
 - `parent_intent_id` (optional): the `memory_id` of the intent being replaced
 - `replacement_reason` (optional): why the previous code is being replaced
+- `project_name` (optional): project name for cross-project knowledge sharing
 
 `capture_intent` is **idempotent** — re-capturing the same file + prompt +
 generated code returns `duplicate: true` with the existing `memory_id`.
-Call it without fear of creating duplicate rows.
-
-Persist the returned `memory_id` in your working context for that file. You
-will reuse it in Rules C and D.
 
 Trigger: any successful write/edit of a function-level unit of code.
-Action: call `capture_intent` exactly once per logical unit, not per character.
+Action: call `capture_intent` exactly once per logical unit.
 
 ### Rule C — When the user reports an error, LOG the failure
 If the user pastes an error, stack trace, failed test output, or says
 something is "broken" / "not working" / "throws":
-1. Identify the `memory_id` for the offending file (via `query_memory` if you
-   don't have it cached).
+1. Identify the `memory_id` for the offending file (via `query_memory`).
 2. Call `log_failure` with `memory_id`, `error_type`, `error_message`,
-   `stack_trace` (when available), and `call_chain` (function names involved).
+   `stack_trace` (when available), and `call_chain`.
 
 Trigger: user-reported runtime error, failing test, or exception trace.
 Action: `log_failure` BEFORE attempting a fix.
@@ -66,8 +65,7 @@ Action: `log_failure` BEFORE attempting a fix.
 After `log_failure` (or whenever you are about to fix a known-broken
 `memory_id`), call `get_repair_brief` with that `memory_id`. The brief returns
 intent + code + recent runtime + recent failures + **proven fixes from similar
-past errors** in one structured payload. Read it. Use it. It is the single
-source of truth for the fix.
+past errors** in one structured payload. Read it. Use it.
 
 Trigger: any debugging or "fix this" task targeting a tracked file.
 Action: `get_repair_brief` BEFORE proposing a patch.
@@ -76,69 +74,90 @@ Action: `get_repair_brief` BEFORE proposing a patch.
 If you wrap a function with `RuntimeObserver` (or the `hook` auto-instrumenter
 runs in CJS mode), the recorded entry/exit events should reach Codememory via
 `record_runtime`. You generally do not call this by hand — the runtime hook
-does — but if you observe a function manually and want the trace persisted,
-call `record_runtime` with `memory_id`, `function_name`, `args`, `return_value`
-(or `error`), and `duration_ms`.
+does — but if you observe a function manually, call `record_runtime`.
 
 ### Rule F — After fixing a bug, LOG the resolution
 When you successfully fix a bug tracked by a `failure_id`, call `log_resolution`
-with:
-- `failure_id`: the ID of the failure that was resolved
-- `fixing_intent_id`: the `memory_id` of the intent that contains the fix
-- `approach` (optional): a brief description of the fix approach
-- `diff_summary` (optional): a summary of what changed
-
-This enables Codememory to surface proven fixes when similar errors recur.
+with `failure_id`, `fixing_intent_id`, and optionally `approach`/`diff_summary`.
+This enables proven fixes for future repair briefs.
 
 Trigger: after successfully fixing a tracked failure.
 Action: `log_resolution` AFTER confirming the fix.
 
 ### Rule G — When replacing code, TRACK lineage
 When you replace a previously-tracked function or module:
-1. Call `query_memory` with the target file path to find the prior `memory_id`.
+1. Call `query_memory` to find the prior `memory_id`.
 2. Call `capture_intent` with `parent_intent_id` set to the prior `memory_id`
    and `replacement_reason` describing why the replacement is needed.
-3. Call `get_code_lineage` before implementing the replacement to see what was
-   tried before and avoid repeating failed approaches.
+3. Call `get_code_lineage` before implementing the replacement.
 
 Trigger: replacing or significantly refactoring tracked code.
 Action: use `parent_intent_id` + `replacement_reason` on `capture_intent`.
 
+### Rule H — v0.3: CHECK before you write (Predictive Guardrails)
+Before generating a non-trivial function, call `predict_issue` with:
+- `description`: what you're about to implement
+- `file_path`: the target file
+- `project_name` (optional): current project name
+
+If `risk_level` is `high` or `medium`, review the warnings and adjust your
+approach BEFORE generating code. This prevents re-introducing bugs that were
+already encountered in this or other projects.
+
+Trigger: before generating any non-trivial function.
+Action: `predict_issue` BEFORE starting to write code.
+
+### Rule I — v0.3: LEARN from other projects (Cross-Project Search)
+When you encounter a pattern you haven't seen before (e.g., working with a new
+library), call `cross_project_search` to check if similar work failed in
+other projects. This applies lessons learned across your entire code portfolio.
+
+Trigger: when working with unfamiliar libraries or patterns.
+Action: `cross_project_search` before writing code with new dependencies.
+
+### Rule J — v0.3: AUTO-HEAL when failures mount
+After logging a failure, call `auto_heal_trigger` with the `failure_id`.
+Codememory will generate a patch from historical memory and proven fixes.
+Check the result with `auto_heal_status` and apply the suggested patch
+if it looks correct.
+
+Trigger: after `log_failure`.
+Action: `auto_heal_trigger`, then review with `auto_heal_status`.
+
 ## Quick decision table
 
-| User says / situation                         | First tool to call    |
-|-----------------------------------------------|-----------------------|
-| "Add a function that does X"                  | `query_memory`        |
-| Just finished writing a function              | `capture_intent`      |
-| "It crashes" / paste of stack trace           | `log_failure`         |
-| "Fix the bug in foo.ts"                       | `get_repair_brief`    |
-| Bug is now fixed                              | `log_resolution`      |
-| "Refactor / replace the code in bar.ts"       | `get_code_lineage`    |
-| Manually instrumenting a function             | `record_runtime`      |
+| User says / situation                         | First tool to call      |
+|-----------------------------------------------|-------------------------|
+| "Add a function that does X"                  | `query_memory` + `predict_issue` |
+| Working with a new library                    | `cross_project_search`  |
+| Just finished writing a function              | `capture_intent`        |
+| "It crashes" / paste of stack trace           | `log_failure` + `auto_heal_trigger` |
+| "Fix the bug in foo.ts"                       | `get_repair_brief`      |
+| Bug is now fixed                              | `log_resolution`        |
+| "Refactor / replace the code in bar.ts"       | `get_code_lineage`      |
+| Manually instrumenting a function             | `record_runtime`        |
 
-## Guarantees you can rely on
+## Guarantees
 
-- All Codememory tools return structured JSON (Rule 14 of the project standards).
-- All data is local to the user's machine (SQLite, no cloud).
-- `memory_id` values are **content-addressable** — same file + prompt + generated code always produce the same ID. Safe to cache across a session.
-- Failures and runs are append-only; you cannot corrupt prior intents by recording new events.
-- `capture_intent` is idempotent — calling it twice with the same inputs returns `duplicate: true`.
-- All tool inputs have size limits — you won't accidentally send multi-megabyte payloads.
-- Error messages and stack traces are truncated before inclusion in AI context (prevents prompt injection).
-- v0.2.1: `get_repair_brief` includes proven fixes from similar past errors (same `error_type`, previously resolved).
-- v0.2.1: `query_memory` supports natural-language FTS5 search with relevance-ranked results and highlighted snippets.
-- v0.2.1: `query_memory` returns true FTS5 match counts (not just the returned slice) when no `status`/`since` filters are active, enabling accurate pagination.
-- v0.2.1: Multi-provider support — works with Claude Code, Cursor, Codex, Windsurf, and any MCP-compatible AI coding tool.
+- All Codememory tools return structured JSON (Rule 14).
+- All data is local (SQLite, no cloud).
+- `memory_id` values are content-addressable.
+- Failures and runs are append-only.
+- `capture_intent` is idempotent.
+- All tool inputs have size limits.
+- Error messages are truncated before AI context (prompt injection prevention).
+- v0.2.1: `get_repair_brief` includes proven fixes.
+- v0.2.1: `query_memory` supports FTS5 natural-language search.
+- v0.3.0: `predict_issue` provides proactive guardrails from learned patterns.
+- v0.3.0: `cross_project_search` shares knowledge across all projects.
+- v0.3.0: `auto_heal_trigger` generates patches from historical memory.
 
 ## Do NOT
 
-- Do not skip `query_memory` to "save a tool call" — stale assumptions are the
-  whole problem Codememory exists to fix.
-- Do not invent a `memory_id`. Either get one from `capture_intent` or look it
-  up via `query_memory`.
-- Do not summarize a repair brief from memory — always fetch a fresh one with
-  `get_repair_brief` before patching.
-- Do not forget to call `log_resolution` after fixing a bug — proven fixes
-  compound over time.
-- Do not replace tracked code without setting `parent_intent_id` — the lineage
-  chain is what prevents code-looping.
+- Do not skip `query_memory` to "save a tool call".
+- Do not invent a `memory_id`.
+- Do not summarize a repair brief from memory.
+- Do not forget to call `log_resolution` after fixing a bug.
+- Do not replace tracked code without setting `parent_intent_id`.
+- Do not skip `predict_issue` — preemptive prevention beats post-mortem repair.
+- Do not ignore cross-project warnings — they're lessons already paid for.

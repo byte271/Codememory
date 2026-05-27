@@ -1,6 +1,8 @@
 /**
  * Runtime configuration from environment variables.
  * Keeps cloud-free defaults suitable for local SQLite usage (Rule 02).
+ *
+ * v0.3.0: Added auto-heal, dashboard, and guard configuration options.
  */
 
 const DEFAULT_MAX_SNAPSHOTS = 200;
@@ -18,52 +20,100 @@ export function getMaxSnapshotsPerIntent(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_SNAPSHOTS;
 }
 
+// ── v0.3.0: Auto-Heal configuration ──────────────────────────────────────
+
+/**
+ * Polling interval in milliseconds for the auto-heal background worker.
+ * Default: 30 seconds (30000).
+ *
+ * Override with CODEMEMORY_AUTOHEAL_POLL_MS.
+ */
+export function getAutoHealPollMs(): number {
+  const raw = process.env.CODEMEMORY_AUTOHEAL_POLL_MS;
+  if (!raw) return 30_000;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 5_000 ? parsed : 30_000;
+}
+
+/**
+ * Maximum concurrent auto-heal tasks. Keeps resource usage bounded when
+ * many failures pile up. Default: 3.
+ *
+ * Override with CODEMEMORY_AUTOHEAL_MAX_CONCURRENT.
+ */
+export function getAutoHealMaxConcurrent(): number {
+  const raw = process.env.CODEMEMORY_AUTOHEAL_MAX_CONCURRENT;
+  if (!raw) return 3;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3;
+}
+
+/**
+ * Whether the auto-heal worker is enabled. Default: true.
+ *
+ * Override with CODEMEMORY_AUTOHEAL_ENABLED (set to "false" or "0" to disable).
+ */
+export function isAutoHealEnabled(): boolean {
+  const raw = process.env.CODEMEMORY_AUTOHEAL_ENABLED;
+  if (!raw) return true;
+  return raw !== 'false' && raw !== '0';
+}
+
+// ── v0.3.0: Dashboard configuration ──────────────────────────────────────
+
+/**
+ * TCP port for the Behavioral Time Machine dashboard. Default: 4210.
+ *
+ * Override with CODEMEMORY_DASHBOARD_PORT.
+ */
+export function getDashboardPort(): number {
+  const raw = process.env.CODEMEMORY_DASHBOARD_PORT;
+  if (!raw) return 4210;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 && parsed < 65536 ? parsed : 4210;
+}
+
+/**
+ * Whether the dashboard web UI is enabled. Default: false (opt-in for security).
+ *
+ * Override with CODEMEMORY_DASHBOARD_ENABLED (set to "true" or "1" to enable).
+ */
+export function isDashboardEnabled(): boolean {
+  const raw = process.env.CODEMEMORY_DASHBOARD_ENABLED;
+  return raw === 'true' || raw === '1';
+}
+
+// ── v0.3.0: Predictive Guard configuration ───────────────────────────────
+
+/**
+ * Minimum confidence threshold for guard warnings to be surfaced.
+ * Warnings below this threshold are filtered out. Default: 0.3.
+ *
+ * Override with CODEMEMORY_GUARD_CONFIDENCE_THRESHOLD (0.0–1.0).
+ */
+export function getGuardConfidenceThreshold(): number {
+  const raw = process.env.CODEMEMORY_GUARD_CONFIDENCE_THRESHOLD;
+  if (!raw) return 0.3;
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 0.3;
+}
+
 // ── v0.2.0: Input size limits to prevent DoS and DB bloat ──────────────
-// All MCP tool string inputs are capped at these limits. Override via env.
 
-/** Max prompt length for capture_intent (default 64KB). */
 export const MAX_PROMPT_LENGTH = 65_536;
-
-/** Max generated_code length for capture_intent (default 256KB). */
 export const MAX_CODE_LENGTH = 262_144;
-
-/** Max file_path length (default 1024 chars). */
 export const MAX_PATH_LENGTH = 1_024;
-
-/** Max ai_tool / language / function_name length (default 256 chars). */
 export const MAX_LABEL_LENGTH = 256;
-
-/** Max error_type length for log_failure (default 256 chars). */
 export const MAX_ERROR_TYPE_LENGTH = 256;
-
-/** Max error_message length for log_failure (default 4KB). */
 export const MAX_ERROR_MESSAGE_LENGTH = 4_096;
-
-/** Max stack_trace length for log_failure (default 32KB). */
 export const MAX_STACK_TRACE_LENGTH = 32_768;
-
-/** Max call_chain array elements for log_failure (default 50). */
 export const MAX_CALL_CHAIN_LENGTH = 50;
-
-/** Max call_chain element string length (default 256 chars each). */
 export const MAX_CALL_CHAIN_ELEMENT_LENGTH = 256;
-
-/** Max approach / diff_summary length for log_resolution (default 4KB each). */
 export const MAX_PROVENANCE_FIELD_LENGTH = 4_096;
-
-/** Max arguments array elements for record_runtime (default 100). */
 export const MAX_ARGUMENTS_LENGTH = 100;
-
-/** Max FTS5 query length (default 1KB). */
 export const MAX_QUERY_LENGTH = 1_024;
-
-/** Max replacement_reason length (default 512 chars). */
 export const MAX_REPLACEMENT_REASON_LENGTH = 512;
-
-/** Max array elements processed by sanitizer (breadth DoS guard). */
 export const MAX_SANITIZER_ARRAY_LENGTH = 1_000;
-
-/** Max object keys processed by sanitizer (breadth DoS guard). */
 export const MAX_SANITIZER_OBJECT_KEYS = 500;
 
 /**

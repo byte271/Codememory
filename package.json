@@ -1,7 +1,7 @@
 {
   "name": "@opvoid/codememory",
-  "version": "0.2.1",
-  "description": "A runtime behavior memory layer for AI-generated code",
+  "version": "0.3.0",
+  "description": "A runtime behavior memory layer for AI-generated code — captures intent, records runtime traces, learns from failures, and auto-heals with proven fixes across all your projects",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -29,7 +29,14 @@
     "ai",
     "memory",
     "runtime",
-    "behavior"
+    "behavior",
+    "auto-heal",
+    "self-repair",
+    "guardrails",
+    "observability",
+    "sqlite",
+    "cross-project",
+    "lineage"
   ],
   "author": "byte271",
   "license": "MIT",
@@ -40,10 +47,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.1",
     "better-sqlite3": "^11.0.0",
+    "express": "^4.21.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.10",
+    "@types/express": "^4.17.25",
     "@types/node": "^20.12.7",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",

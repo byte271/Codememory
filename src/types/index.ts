@@ -1,6 +1,9 @@
 /**
  * Core type definitions for Codememory.
  * Follows Rule 12: All public APIs must have TypeScript types exported from /src/types/index.ts.
+ *
+ * v0.3: Added Project, AutoHealTask, GuardRule, GuardPrediction,
+ *       Cross-project, and Timeline types.
  */
 
 export interface IntentRecord {
@@ -16,6 +19,8 @@ export interface IntentRecord {
   parent_intent_id: string | null;
   /** v0.2 lineage: why the replacement was made. */
   replacement_reason: string;
+  /** v0.3: project this intent belongs to, for cross-project knowledge. */
+  project_id: string | null;
 }
 
 export interface RuntimeSnapshot {
@@ -79,6 +84,93 @@ export interface IntentSearchResult {
   snippet: string;
 }
 
+// ── v0.3 Types ────────────────────────────────────────────────────────────
+
+/** v0.3: Registered project for cross-project knowledge sharing. */
+export interface Project {
+  id: string;
+  name: string;
+  root_path: string;
+  created_at: number;
+}
+
+/** v0.3: Auto-heal task for autonomous self-repair. */
+export interface AutoHealTask {
+  id: string;
+  failure_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  patch_code: string | null;
+  test_results: string | null;
+  pr_url: string | null;
+  error_log: string | null;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+}
+
+/** v0.3: Predictive guard rule — learned failure pattern. */
+export interface GuardRule {
+  id: string;
+  error_pattern: string;
+  error_type: string;
+  suggestion: string;
+  file_pattern: string;
+  project_id: string | null;
+  hit_count: number;
+  created_at: number;
+}
+
+/** v0.3: Guard prediction log entry. */
+export interface GuardPrediction {
+  id: string;
+  intent_id: string;
+  rule_id: string;
+  confidence: number;
+  was_accurate: number;
+  created_at: number;
+}
+
+/** v0.3: Cross-project search result. */
+export interface CrossProjectResult {
+  project: Project;
+  intent: IntentRecord;
+  failure: FailureRecord | null;
+  resolution: Resolution | null;
+  match_context: string;
+}
+
+/** v0.3: A single event on the behavioral timeline. */
+export interface TimelineEvent {
+  timestamp: number;
+  type: 'intent_created' | 'runtime_recorded' | 'failure_logged' | 'resolution_logged' | 'auto_heal_triggered' | 'guard_warning';
+  summary: string;
+  file_path: string;
+  detail: Record<string, unknown>;
+}
+
+/** v0.3: Aggregated timeline data for the dashboard. */
+export interface TimelineData {
+  events: TimelineEvent[];
+  stats: {
+    totalIntents: number;
+    totalFailures: number;
+    totalResolutions: number;
+    totalAutoHeals: number;
+    errorRate: number;
+    fixRate: number;
+    recentTrends: TrendPoint[];
+  };
+}
+
+/** v0.3: A single data point on a trend line. */
+export interface TrendPoint {
+  label: string;
+  errors: number;
+  fixes: number;
+}
+
+// ── v0.2 Input/Output types ───────────────────────────────────────────────
+
 export interface CaptureIntentInput {
   prompt: string;
   generated_code: string;
@@ -89,6 +181,8 @@ export interface CaptureIntentInput {
   parent_intent_id?: string;
   /** v0.2: Why the parent was replaced. */
   replacement_reason?: string;
+  /** v0.3: Project identifier for cross-project knowledge. */
+  project_name?: string;
 }
 
 export interface CaptureIntentOutput {
@@ -178,6 +272,90 @@ export interface LogResolutionInput {
 export interface LogResolutionOutput {
   resolution_id: string;
   status: 'resolved';
+}
+
+// ── v0.3 Input/Output types ───────────────────────────────────────────────
+
+export interface PredictIssueInput {
+  /** The proposed code or approach the AI is about to generate. */
+  proposed_code?: string;
+  /** Natural language description of what's being attempted. */
+  description?: string;
+  /** Target file path for context-aware predictions. */
+  file_path?: string;
+  /** Project name for cross-project rule matching. */
+  project_name?: string;
+}
+
+export interface PredictIssueOutput {
+  warnings: GuardWarning[];
+  /** Overall risk level based on matching patterns. */
+  risk_level: 'high' | 'medium' | 'low' | 'none';
+  /** Total number of matching guard rules found. */
+  match_count: number;
+}
+
+export interface GuardWarning {
+  rule_id: string;
+  error_type: string;
+  pattern: string;
+  suggestion: string;
+  confidence: number;
+  /** Whether this warning came from another project's experience. */
+  from_cross_project: boolean;
+}
+
+export interface CrossProjectSearchInput {
+  /** Error pattern or description to search across projects. */
+  query: string;
+  /** Limit results per project (default 5). */
+  limit?: number;
+}
+
+export interface CrossProjectSearchOutput {
+  results: CrossProjectResult[];
+  total: number;
+  /** Which projects had matches. */
+  matched_projects: string[];
+}
+
+export interface AutoHealTriggerInput {
+  /** The failure_id to auto-heal. */
+  failure_id: string;
+}
+
+export interface AutoHealTriggerOutput {
+  task_id: string;
+  /** The current status of the auto-heal task after immediate execution. */
+  status: AutoHealTask['status'];
+  /** Estimated time to complete (ms). */
+  estimated_ms: number;
+}
+
+export interface AutoHealStatusInput {
+  /** The auto-heal task ID. */
+  task_id: string;
+}
+
+export interface AutoHealStatusOutput {
+  task: AutoHealTask;
+  /** The original failure this task is fixing. */
+  failure: FailureRecord;
+}
+
+export interface TimelineQueryInput {
+  /** Start of time range (epoch ms). */
+  since?: number;
+  /** End of time range (epoch ms). */
+  until?: number;
+  /** Filter to specific file. */
+  file_path?: string;
+  /** Max events to return (default 100). */
+  limit?: number;
+}
+
+export interface TimelineQueryOutput {
+  timeline: TimelineData;
 }
 
 /** Structured MCP error payload (Rule 14). */
