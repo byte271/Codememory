@@ -56,7 +56,7 @@ export class IntentSearchEngine {
             i.id, i.created_at, i.file_path, i.prompt, i.generated,
             i.ai_tool, i.language, i.status,
             i.parent_intent_id, i.replacement_reason,
-            snippet(intent_fts, 2, '<mark>', '</mark>', '…', 40) AS snippet,
+            snippet(intent_fts, -1, '<mark>', '</mark>', '…', 40) AS snippet,
             rank
           FROM intent_fts
           JOIN intent_records i ON intent_fts.rowid = i.rowid
@@ -74,7 +74,7 @@ export class IntentSearchEngine {
           i.id, i.created_at, i.file_path, i.prompt, i.generated,
           i.ai_tool, i.language, i.status,
           i.parent_intent_id, i.replacement_reason,
-          snippet(intent_fts, 2, '<mark>', '</mark>', '…', 40) AS snippet,
+          snippet(intent_fts, -1, '<mark>', '</mark>', '…', 40) AS snippet,
           rank
         FROM intent_fts
         JOIN intent_records i ON intent_fts.rowid = i.rowid
@@ -87,6 +87,47 @@ export class IntentSearchEngine {
     } catch (error) {
       logger.error('FTS5 search failed', error, { query, filePath });
       return [];
+    }
+  }
+
+  /**
+   * Returns the total number of FTS5 matches for a query, optionally
+   * limited to a specific file. This enables accurate pagination totals
+   * when no post-FTS5 client-side filters (status, since) are active.
+   *
+   * @param query    Natural-language search terms.
+   * @param filePath Optional file path filter.
+   * @returns        Total matching row count (uncapped).
+   */
+  public count(query: string, filePath?: string): number {
+    const escapedQuery = this.escapeFts5(query);
+
+    if (escapedQuery === '""' || escapedQuery.trim().length === 0) {
+      return 0;
+    }
+
+    try {
+      if (filePath) {
+        const row = this.manager.prepare(`
+          SELECT COUNT(*) AS cnt
+          FROM intent_fts
+          JOIN intent_records i ON intent_fts.rowid = i.rowid
+          WHERE intent_fts MATCH ?
+            AND i.file_path = ?
+        `).get(escapedQuery, filePath) as { cnt: number } | undefined;
+        return row?.cnt ?? 0;
+      }
+
+      const row = this.manager.prepare(`
+        SELECT COUNT(*) AS cnt
+        FROM intent_fts
+        JOIN intent_records i ON intent_fts.rowid = i.rowid
+        WHERE intent_fts MATCH ?
+      `).get(escapedQuery) as { cnt: number } | undefined;
+      return row?.cnt ?? 0;
+    } catch (error) {
+      logger.error('FTS5 count query failed', error, { query, filePath });
+      return 0;
     }
   }
 

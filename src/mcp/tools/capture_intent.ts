@@ -46,8 +46,7 @@ export class CaptureIntentTool {
       const timestamp = Date.now();
       const intent = this.extractor.extract(input.prompt);
       const memoryId = hash.generateMemoryId(
-        `${input.file_path}:${input.prompt}:${input.generated_code}`,
-        timestamp
+        `${input.file_path}:${input.prompt}:${input.generated_code}`
       );
       const boundCode = this.binder.bind(input.generated_code, memoryId);
 

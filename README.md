@@ -61,10 +61,10 @@ code and fetch repair briefs before fixing bugs.
 
 ## What `codememory init` creates
 
-- `.mcp.json` — registers Codememory as a Claude Code MCP server (auto-discovered).
-- `CODEMEMORY.md` — rules that tell Claude Code when to call which tool
-  (`capture_intent`, `record_runtime`, `log_failure`, `query_memory`,
-  `get_repair_brief`).
+- `.mcp.json` — registers Codememory as an MCP server for your provider (Claude Code, Cursor, Codex, or Windsurf).
+- `CODEMEMORY.md` — rules that tell the AI agent when to call which tool:
+  `capture_intent`, `record_runtime`, `log_failure`, `log_resolution`,
+  `query_memory`, `get_repair_brief`, and `get_code_lineage`.
 
 Existing files are preserved by default. Pass `--force` to overwrite.
 
@@ -82,6 +82,18 @@ import { RuntimeObserver } from '@opvoid/codememory'
 const observed = observer.observe(yourFunction, 'functionName')
 ```
 
+## The MCP tools (all 7)
+
+| Tool | Purpose |
+|------|---------|
+| `capture_intent` | Record the intent behind generated code (returns a stable `memory_id`). Idempotent — re-capturing the same intent returns `duplicate: true`. |
+| `record_runtime` | Record an observed function execution (args, return value, duration). |
+| `log_failure` | Record an error tied to a `memory_id`. Validates snapshots belong to the intent. |
+| `log_resolution` | Link a resolved failure to the fixing intent (provenance). |
+| `query_memory` | Search intents via **FTS5 natural-language search** (keyword/semantic) or filtered query (file_path, status, since). Returns true pagination totals. |
+| `get_repair_brief` | Assemble a structured repair context: intent + runtime traces + failures + **proven fixes** from similar past errors. |
+| `get_code_lineage` | Trace the full generational history of code (parent → child → grandchild chains). |
+
 ## The repair brief
 
 When something breaks, instead of asking the AI to guess, Codememory gives it:
@@ -89,6 +101,7 @@ When something breaks, instead of asking the AI to guess, Codememory gives it:
 - The original **intent** behind the code (prompt, file, content hash).
 - What the code **actually did** at runtime (inputs, outputs, side effects).
 - The exact **failure point** and stack trace.
+- **Proven fixes** from similar past errors (same error type, previously resolved).
 - A suggested **fix approach** chosen by error type and prior outcomes.
 
 That brief is fetched through one MCP tool call, before any edit, so the
@@ -104,7 +117,8 @@ agent stops re-deriving context that was already paid for once.
 ## Examples
 
 See [`examples/`](./examples/) for `basic-capture`, `repair-brief`, and
-`runtime-observer`.
+`runtime-observer`. These are reference implementations for local
+development — they import from `src/` and are not shipped in the npm package.
 
 ## Development
 

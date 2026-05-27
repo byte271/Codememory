@@ -1,6 +1,6 @@
 {
   "name": "@opvoid/codememory",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A runtime behavior memory layer for AI-generated code",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -10,7 +10,7 @@
   },
   "files": [
     "dist",
-    "examples"
+    "assets"
   ],
   "scripts": {
     "build": "tsup src/index.ts src/bin.ts --format cjs,esm --dts && pnpm run copy-templates",
@@ -33,6 +33,10 @@
   ],
   "author": "byte271",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.4",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.1",
     "better-sqlite3": "^11.0.0",

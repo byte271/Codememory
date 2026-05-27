@@ -2,6 +2,45 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { logger } from '../utils/logger.js';
 
+// ── v0.2.1: Multi-provider support ──────────────────────────────────────────
+
+/** Supported AI coding providers. */
+export type Provider = 'claude' | 'cursor' | 'codex' | 'windsurf';
+
+/** Per-provider configuration for MCP config file placement. */
+export interface ProviderConfig {
+  /** Subdirectory under the project root for the MCP config ('' = root). */
+  mcpConfigSubdir: string;
+  /** The rules file Codememory users should @include from. */
+  hostRulesFilename: string;
+  /** Human-readable label for CLI output. */
+  label: string;
+}
+
+/** v0.2.1: Known provider configurations. */
+export const PROVIDERS: Record<Provider, ProviderConfig> = {
+  claude: {
+    mcpConfigSubdir: '',
+    hostRulesFilename: 'CLAUDE.md',
+    label: 'Claude Code',
+  },
+  cursor: {
+    mcpConfigSubdir: '.cursor',
+    hostRulesFilename: '.cursorrules',
+    label: 'Cursor',
+  },
+  codex: {
+    mcpConfigSubdir: '.codex',
+    hostRulesFilename: 'CODEX.md',
+    label: 'OpenAI Codex',
+  },
+  windsurf: {
+    mcpConfigSubdir: '.windsurf',
+    hostRulesFilename: '.windsurfrules',
+    label: 'Windsurf',
+  },
+};
+
 /**
  * Result of running `codememory init` — describes which files were created,
  * which already existed (and were skipped), and the resolved target paths.
@@ -15,6 +54,7 @@ export interface InitResult {
   targetDir: string;
   mcpConfigPath: string;
   rulesPath: string;
+  provider: Provider;
 }
 
 /**
@@ -26,20 +66,26 @@ export interface InitResult {
  *                       project root (process.cwd()).
  * @property templateDir Directory containing `mcp-config.json` and
  *                       `codememory-rules.md` source templates.
- * @property force       When true, overwrite existing `.mcp.json` /
- *                       `CODEMEMORY.md` instead of skipping. Defaults to false.
+ * @property force       When true, overwrite existing files instead of
+ *                       skipping. Defaults to false.
+ * @property provider    v0.2.1: Target AI coding provider. Defaults to 'claude'.
  */
 export interface InitOptions {
   targetDir: string;
   templateDir: string;
   force?: boolean;
+  provider?: Provider;
 }
 
 /**
- * The two destination filenames `codememory init` writes into the user's
- * project. Exported so tests can reference them without string-duplication.
+ * The MCP config filename (same across all providers).
  */
 export const MCP_CONFIG_FILENAME = '.mcp.json';
+
+/**
+ * The rules filename Codememory writes into the user's project.
+ * Designed to be @include'd from the provider-specific rules file.
+ */
 export const RULES_FILENAME = 'CODEMEMORY.md';
 
 /**
@@ -74,11 +120,13 @@ function copyTemplate(
 /**
  * Run `codememory init` against a target directory.
  *
+ * v0.2.1: Supports multiple AI coding providers via {@link InitOptions.provider}.
+ *
  * Generates two files in the target project:
- *   - `.mcp.json`  — registers Codememory as a Claude Code MCP server.
+ *   - Provider-specific MCP config (e.g. `.mcp.json` for Claude, `.cursor/mcp.json` for Cursor).
  *   - `CODEMEMORY.md`  — instructions for the AI agent describing when to
- *                    call which Codememory tool. Designed to be appended to
- *                    or referenced from the project's CLAUDE.md.
+ *                    call which Codememory tool. Designed to be @include'd
+ *                    from the provider's host rules file (e.g. CLAUDE.md).
  *
  * Existing files are preserved unless {@link InitOptions.force} is true.
  *
@@ -86,7 +134,8 @@ function copyTemplate(
  * {@link InitResult} so the CLI wrapper (or a test) can format output.
  */
 export function runInit(options: InitOptions): InitResult {
-  const { targetDir, templateDir, force = false } = options;
+  const { targetDir, templateDir, force = false, provider = 'claude' } = options;
+  const providerConfig = PROVIDERS[provider];
 
   if (!fs.existsSync(targetDir)) {
     throw new Error(`Target directory does not exist: ${targetDir}`);
@@ -95,7 +144,15 @@ export function runInit(options: InitOptions): InitResult {
     throw new Error(`Target path is not a directory: ${targetDir}`);
   }
 
-  const mcpConfigPath = path.join(targetDir, MCP_CONFIG_FILENAME);
+  // Resolve the MCP config path (may be in a provider subdirectory).
+  const mcpConfigDir = providerConfig.mcpConfigSubdir
+    ? path.join(targetDir, providerConfig.mcpConfigSubdir)
+    : targetDir;
+  if (providerConfig.mcpConfigSubdir && !fs.existsSync(mcpConfigDir)) {
+    fs.mkdirSync(mcpConfigDir, { recursive: true });
+  }
+
+  const mcpConfigPath = path.join(mcpConfigDir, MCP_CONFIG_FILENAME);
   const rulesPath = path.join(targetDir, RULES_FILENAME);
 
   const wroteMcp = copyTemplate(
@@ -114,7 +171,7 @@ export function runInit(options: InitOptions): InitResult {
   (wroteMcp ? created : skipped).push(mcpConfigPath);
   (wroteRules ? created : skipped).push(rulesPath);
 
-  return { created, skipped, targetDir, mcpConfigPath, rulesPath };
+  return { created, skipped, targetDir, mcpConfigPath, rulesPath, provider };
 }
 
 /**

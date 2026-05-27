@@ -53,10 +53,20 @@ export class QueryMemoryTool {
             `query exceeds maximum length of ${MAX_QUERY_LENGTH} characters`
           );
         }
-        const limit = input.limit ?? 10;
+        const limit = Math.max(1, Math.min(50, input.limit ?? 10));
+        const hasPostFilter = !!(input.status || input.since);
+
+        // When post-FTS5 filters are active, fetch a larger window so the
+        // caller still gets ~limit results after filtering. Without this,
+        // requesting limit: 10 + status: "broken" could return only 2 records
+        // because FTS5 returns 10 and the status filter removes 8.
+        const fetchLimit = hasPostFilter
+          ? Math.min(250, limit * 5)
+          : limit;
+
         let searchResults = this.search.search(
           input.query,
-          limit,
+          fetchLimit,
           input.file_path
         );
 
@@ -75,11 +85,23 @@ export class QueryMemoryTool {
           );
         }
 
-        const records = searchResults.map(r => r.record);
+        const records = searchResults
+          .slice(0, limit)
+          .map(r => r.record);
+
+        // When no post-FTS5 client-side filters are active, we can ask the
+        // FTS5 engine for the true total match count — this enables accurate
+        // pagination (e.g. "page 2 of N"). When status/since filters ARE
+        // active, the true count after client-side filtering is unknowable
+        // without fetching all rows, so we fall back to the slice length.
+        const total = hasPostFilter
+          ? records.length
+          : this.search.count(input.query, input.file_path);
+
         return {
           records,
-          total: records.length,
-          search_results: searchResults,
+          total,
+          search_results: searchResults.slice(0, limit),
         };
       }
 

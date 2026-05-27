@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CodememoryServer } from './mcp/server.js';
 import { logger } from './utils/logger.js';
-import { runInit, resolveTemplateDir } from './cli/init.js';
+import { runInit, resolveTemplateDir, PROVIDERS, Provider } from './cli/init.js';
 
 /**
  * Resolve the directory of this binary at runtime, working under both
@@ -32,11 +32,13 @@ function getBinDir(): string {
 function printInitResult(
   created: string[],
   skipped: string[],
-  targetDir: string
+  targetDir: string,
+  provider: Provider
 ): void {
   const rel = (p: string) => path.relative(targetDir, p) || p;
+  const cfg = PROVIDERS[provider];
   if (created.length > 0) {
-    console.log(`codememory init: created ${created.length} file(s):`);
+    console.log(`codememory init: created ${created.length} file(s) for ${cfg.label}:`);
     for (const f of created) console.log(`  + ${rel(f)}`);
   }
   if (skipped.length > 0) {
@@ -47,32 +49,72 @@ function printInitResult(
   }
   console.log('');
   console.log('Next steps:');
-  console.log('  1. Open this project in Claude Code.');
-  console.log('  2. Claude Code auto-loads .mcp.json and starts Codememory via stdio.');
-  console.log('  3. Reference CODEMEMORY.md from your CLAUDE.md (or paste it in)');
+  console.log(`  1. Open this project in ${cfg.label}.`);
+  console.log('  2. The provider auto-loads the MCP config and starts Codememory via stdio.');
+  console.log(`  3. @include CODEMEMORY.md from your ${cfg.hostRulesFilename} (or paste it in)`);
   console.log('     so the agent knows when to call which Codememory tool.');
 }
 
 /**
- * Handle the `init` subcommand. Generates `.mcp.json` and `CODEMEMORY.md`
- * in the user's current working directory.
+ * Parse the --provider flag from CLI args. Validates against known providers.
+ */
+export function parseProvider(argv: string[]): Provider {
+  // Support both `--provider cursor` and `--provider=cursor` forms.
+  let value: string | undefined;
+  let found = false;
+
+  const idx = argv.indexOf('--provider');
+  if (idx !== -1) {
+    found = true;
+    value = argv[idx + 1];
+  } else {
+    // Check for --provider=<value> form.
+    const eqArg = argv.find((a) => a.startsWith('--provider='));
+    if (eqArg) {
+      found = true;
+      value = eqArg.slice('--provider='.length);
+    }
+  }
+
+  if (!found) return 'claude';
+
+  if (!value || value.startsWith('-')) {
+    throw new Error(
+      `--provider requires a value. Supported: ${Object.keys(PROVIDERS).join(', ')}`
+    );
+  }
+  if (!(value in PROVIDERS)) {
+    throw new Error(
+      `Unknown provider "${value}". Supported: ${Object.keys(PROVIDERS).join(', ')}`
+    );
+  }
+  return value as Provider;
+}
+
+/**
+ * Handle the `init` subcommand. Generates provider-specific MCP config
+ * and `CODEMEMORY.md` in the user's current working directory.
  */
 function handleInit(argv: string[]): void {
   if (argv.includes('--help') || argv.includes('-h')) {
     console.log(`codememory init - Scaffold Codememory into the current project.
 
 Usage:
-  codememory init             Create .mcp.json and CODEMEMORY.md (skip existing).
-  codememory init --force     Overwrite existing .mcp.json and CODEMEMORY.md.
-  codememory init --help      Show this message.
+  codememory init                   Create config + rules for Claude Code (default).
+  codememory init --provider <p>    Target a specific provider (cursor, codex, windsurf).
+  codememory init --force           Overwrite existing files.
+  codememory init --help            Show this message.
+
+Supported providers: ${Object.keys(PROVIDERS).join(', ')}
 `);
     return;
   }
   const force = argv.includes('--force') || argv.includes('-f');
+  const provider = parseProvider(argv);
   const targetDir = process.cwd();
   const templateDir = resolveTemplateDir(getBinDir());
-  const result = runInit({ targetDir, templateDir, force });
-  printInitResult(result.created, result.skipped, result.targetDir);
+  const result = runInit({ targetDir, templateDir, force, provider });
+  printInitResult(result.created, result.skipped, result.targetDir, result.provider);
 }
 
 /**
@@ -82,10 +124,11 @@ function printHelp(): void {
   console.log(`codememory - Runtime Behavior Memory for AI-generated code
 
 Usage:
-  codememory                Run the Codememory MCP server (stdio).
-  codememory init           Scaffold .mcp.json and CODEMEMORY.md in the current dir.
-  codememory init --force   Overwrite existing .mcp.json / CODEMEMORY.md.
-  codememory --help         Show this message.
+  codememory                          Run the Codememory MCP server (stdio).
+  codememory init                     Scaffold config + rules (default: Claude Code).
+  codememory init --provider cursor   Scaffold for Cursor, Codex, Windsurf, etc.
+  codememory init --force             Overwrite existing files.
+  codememory --help                   Show this message.
 `);
 }
 
@@ -112,6 +155,15 @@ async function run(): Promise<void> {
     }
 
     const server = new CodememoryServer();
+
+    // Graceful shutdown on SIGINT (Ctrl+C) and SIGTERM.
+    const shutdown = async () => {
+      await server.shutdown();
+      process.exit(0);
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+
     await server.run();
   } catch (error) {
     logger.error('codememory CLI failed', error);

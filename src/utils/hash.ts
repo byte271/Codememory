@@ -6,20 +6,23 @@ import { createHash, randomBytes } from 'crypto';
  */
 export const hash = {
   /**
-   * Generates a deterministic SHA256-based ID from content and a timestamp.
-   * Given the same inputs, this always returns the same 64-character hex
+   * Generates a deterministic SHA256-based ID from content alone.
+   * Given the same input, this always returns the same 64-character hex
    * string, making it safe to use as a stable content-addressed identifier.
    *
    * Use for intent records where `generated_code` differentiates revisions.
    * Do not use for high-frequency runtime rows — use {@link generateUniqueId}.
    *
-   * @param content   The primary content to hash (prompt, function name, etc.).
-   * @param timestamp Unix epoch in milliseconds.
-   * @returns         A 64-character hex string.
+   * Content-addressable: same input always produces the same ID so
+   * capture_intent is naturally idempotent (SQLITE_CONSTRAINT on
+   * duplicate PRIMARY KEY returns duplicate: true).
+   *
+   * @param content The primary content to hash (prompt, function name, etc.).
+   * @returns       A 64-character hex string.
    */
-  generateMemoryId(content: string, timestamp: number): string {
+  generateMemoryId(content: string): string {
     return createHash('sha256')
-      .update(`${content}-${timestamp}`)
+      .update(content)
       .digest('hex');
   },
 

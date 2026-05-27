@@ -11,7 +11,8 @@ export function isLocalModuleRequest(request: string): boolean {
   if (request.startsWith('.') || request.startsWith('/')) {
     return true;
   }
-  if (/^[A-Za-z]:[\\/]/.test(request)) {
+  // Windows drive letter (C:\...) or UNC network path (\\server\share\...).
+  if (/^[A-Za-z]:[\\/]/.test(request) || request.startsWith('\\\\')) {
     return true;
   }
   return false;

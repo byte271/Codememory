@@ -84,6 +84,33 @@ export class IntentFilteredQueries {
   }
 
   /**
+   * Computes the filter flag bitmask from filter options without building
+   * bind parameters or validating limit (used by both query and count paths).
+   *
+   * @param options Filter fields from query_memory.
+   * @returns The bitmask flag value.
+   */
+  private static computeFlags(options: {
+    file_path?: string;
+    since?: number;
+    status?: string;
+  }): FilterFlags {
+    let flags = 0;
+    if (options.file_path) flags |= 1;
+    if (options.since !== undefined) {
+      if (!Number.isFinite(options.since) || options.since < 0) {
+        throw new CodememoryError(
+          CODEMEMORY_ERROR_CODES.INVALID_QUERY,
+          'Invalid since: must be a non-negative epoch milliseconds value'
+        );
+      }
+      flags |= 2;
+    }
+    if (options.status) flags |= 4;
+    return flags as FilterFlags;
+  }
+
+  /**
    * Computes the filter flag bitmask and ordered bind parameters.
    *
    * @param options Filter fields from query_memory.
@@ -95,27 +122,12 @@ export class IntentFilteredQueries {
     status?: string;
     limit?: number;
   }): { flags: FilterFlags; params: unknown[] } {
-    let flags = 0;
+    const flags = IntentFilteredQueries.computeFlags(options);
     const params: unknown[] = [];
 
-    if (options.file_path) {
-      flags |= 1;
-      params.push(options.file_path);
-    }
-    if (options.since !== undefined) {
-      if (!Number.isFinite(options.since) || options.since < 0) {
-        throw new CodememoryError(
-          CODEMEMORY_ERROR_CODES.INVALID_QUERY,
-          'Invalid since: must be a non-negative epoch milliseconds value'
-        );
-      }
-      flags |= 2;
-      params.push(options.since);
-    }
-    if (options.status) {
-      flags |= 4;
-      params.push(options.status);
-    }
+    if (options.file_path) params.push(options.file_path);
+    if (options.since !== undefined) params.push(options.since);
+    if (options.status) params.push(options.status);
 
     const limit = options.limit ?? 10;
     if (!Number.isFinite(limit) || limit < 1 || limit > 500) {
@@ -126,13 +138,7 @@ export class IntentFilteredQueries {
     }
     params.push(Math.floor(limit));
 
-    if (flags < 0 || flags > 7) {
-      throw new CodememoryError(
-        CODEMEMORY_ERROR_CODES.INVALID_QUERY,
-        `Invalid intent filter combination: ${flags}`
-      );
-    }
-    return { flags: flags as FilterFlags, params };
+    return { flags, params };
   }
 
   /**
@@ -147,11 +153,13 @@ export class IntentFilteredQueries {
     status?: string;
     limit?: number;
   }): { flags: FilterFlags; params: unknown[] } {
-    const { flags, params } = IntentFilteredQueries.buildParams({
-      ...options,
-      limit: 1,
-    });
-    params.pop();
+    const flags = IntentFilteredQueries.computeFlags(options);
+    const params: unknown[] = [];
+
+    if (options.file_path) params.push(options.file_path);
+    if (options.since !== undefined) params.push(options.since);
+    if (options.status) params.push(options.status);
+
     return { flags, params };
   }
 }

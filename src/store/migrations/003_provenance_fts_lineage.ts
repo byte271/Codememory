@@ -33,10 +33,16 @@ export function up(db: Database): void {
   // ── 2. Intent lineage columns ──────────────────────────────────────────
   // ALTER TABLE in SQLite only supports ADD COLUMN; ok here since we never
   // break existing columns (Rule 08).
-  db.exec(`
-    ALTER TABLE intent_records ADD COLUMN parent_intent_id   TEXT REFERENCES intent_records(id) ON DELETE SET NULL;
-    ALTER TABLE intent_records ADD COLUMN replacement_reason TEXT NOT NULL DEFAULT '';
-  `);
+  // Guard against re-migration: check if column already exists so this
+  // migration is idempotent even if _migrations tracking is reset.
+  const columns = db.prepare('PRAGMA table_info(intent_records)').all() as { name: string }[];
+  const columnNames = new Set(columns.map((c) => c.name));
+  if (!columnNames.has('parent_intent_id')) {
+    db.exec(`ALTER TABLE intent_records ADD COLUMN parent_intent_id TEXT REFERENCES intent_records(id) ON DELETE SET NULL`);
+  }
+  if (!columnNames.has('replacement_reason')) {
+    db.exec(`ALTER TABLE intent_records ADD COLUMN replacement_reason TEXT NOT NULL DEFAULT ''`);
+  }
 
   // ── 3. FTS5 full-text index on prompts + generated code ────────────────
   // The content table is external (content='intent_records') so FTS5 does

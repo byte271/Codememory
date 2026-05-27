@@ -24,6 +24,7 @@ interface NodeModuleLoader {
 export class InstrumentationHook {
   private observer: RuntimeObserver;
   private originalLoader: (request: string, parent: Module | null, isMain: boolean) => unknown;
+  private active = false;
 
   /**
    * Initializes the hook with a runtime observer.
@@ -74,7 +75,20 @@ export class InstrumentationHook {
 
       return exports;
     };
+    this.active = true;
     logger.info('[Codememory] Auto-instrumentation hook started (CJS mode)');
+  }
+
+  /**
+   * Restores the original Module._load, stopping all auto-instrumentation.
+   * Safe to call even if the hook was never started (no-op).
+   */
+  public stop(): void {
+    if (!this.active) return;
+    const moduleWithLoader = Module as unknown as NodeModuleLoader;
+    moduleWithLoader._load = this.originalLoader;
+    this.active = false;
+    logger.info('[Codememory] Auto-instrumentation hook stopped');
   }
 
   /**
@@ -128,10 +142,29 @@ export class InstrumentationHook {
 
       for (const [key, value] of Object.entries(record)) {
         if (typeof value === 'function') {
-          record[key] = this.observer.observe(
+          const wrapped = this.observer.observe(
             value as (...args: unknown[]) => unknown,
             `${moduleName}.${key}`
           );
+          // Use Object.defineProperty to survive frozen/sealed exports and
+          // getter-only properties set by bundlers (tsup, Babel, TS __esModule).
+          try {
+            record[key] = wrapped;
+          } catch {
+            try {
+              Object.defineProperty(record, key, {
+                value: wrapped,
+                writable: true,
+                enumerable: true,
+                configurable: true,
+              });
+            } catch {
+              logger.warn(
+                `Cannot instrument "${moduleName}.${key}" — exports are frozen or have getter-only properties`
+              );
+              continue;
+            }
+          }
           hasFunctions = true;
         }
       }

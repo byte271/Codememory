@@ -25,13 +25,13 @@ import { formatToolError } from '../utils/errors.js';
 /**
  * MCP Server for Codememory.
  *
- * v0.2.0 adds:
+ * v0.2.1 adds:
  *   - log_resolution   — link a resolved failure to the intent that fixed it
  *   - get_code_lineage — trace full generational history of generated code
  *   - query_memory     — enhanced with FTS5 natural-language search
  *   - get_repair_brief — enhanced with proven fix suggestions
  *
- * @security v0.2.0: Codememory does NOT provide per-client authentication or
+ * @security v0.2.1: Codememory does NOT provide per-client authentication or
  *   data isolation. All MCP clients connected to the same server share a single
  *   SQLite database with full read/write access. This is intentional for local
  *   single-user workflows. Multi-tenant deployments would require client identity
@@ -57,7 +57,7 @@ export class CodememoryServer {
     this.server = new Server(
       {
         name: 'codememory',
-        version: '0.2.0',
+        version: '0.2.1',
       },
       {
         capabilities: {
@@ -253,6 +253,24 @@ export class CodememoryServer {
     } catch (error) {
       logger.error('Failed to start Codememory server', error);
       throw error;
+    }
+  }
+
+  /**
+   * Gracefully shuts down the server, checkpoints the WAL, and closes the
+   * database. Safe to call multiple times (idempotent).
+   *
+   * Called on SIGINT/SIGTERM so the WAL is flushed and -wal/-shm files
+   * are cleaned up rather than left behind on disk.
+   */
+  public async shutdown(): Promise<void> {
+    try {
+      logger.info('Codememory server shutting down...');
+      await this.server.close();
+      this.dbManager.close();
+      logger.info('Codememory server shut down cleanly');
+    } catch (error) {
+      logger.error('Error during Codememory shutdown', error);
     }
   }
 }

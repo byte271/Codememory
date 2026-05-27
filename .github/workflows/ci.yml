@@ -33,6 +33,9 @@ jobs:
       - name: Rebuild native modules
         run: pnpm rebuild better-sqlite3
 
+      - name: Check branding
+        run: pnpm run check:brand
+
       - name: Type check
         run: pnpm typecheck
 

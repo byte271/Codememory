@@ -19,10 +19,13 @@ The seven Codememory tools registered via MCP are:
 
 ### Rule A — Before writing or modifying code, QUERY first
 Before generating any non-trivial code (new function, new module, edits to an
-existing function), call `query_memory` with the target file path or symbol
-name. If a prior `memory_id` exists for that location, READ its intent and
-recent failures before producing new code. This prevents re-introducing bugs
-the user already hit.
+existing function), call `query_memory` with the target file path or a
+natural-language query describing what you need. `query_memory` supports
+**FTS5 full-text search** across all prompts and generated code, and accepts
+optional `status`, `since`, and `file_path` filters. Results are ranked by
+relevance with highlighted snippets. If a prior `memory_id` exists for that
+location, READ its intent and recent failures before producing new code.
+This prevents re-introducing bugs the user already hit.
 
 Trigger: any tool call that creates or edits a source file.
 Action: call `query_memory` first. Do not skip.
@@ -37,6 +40,10 @@ module, call `capture_intent` with:
 - `language`: the source language (e.g. `"typescript"`)
 - `parent_intent_id` (optional): the `memory_id` of the intent being replaced
 - `replacement_reason` (optional): why the previous code is being replaced
+
+`capture_intent` is **idempotent** — re-capturing the same file + prompt +
+generated code returns `duplicate: true` with the existing `memory_id`.
+Call it without fear of creating duplicate rows.
 
 Persist the returned `memory_id` in your working context for that file. You
 will reuse it in Rules C and D.
@@ -113,11 +120,15 @@ Action: use `parent_intent_id` + `replacement_reason` on `capture_intent`.
 
 - All Codememory tools return structured JSON (Rule 14 of the project standards).
 - All data is local to the user's machine (SQLite, no cloud).
-- `memory_id` values are stable hashes — safe to cache across a session.
-- Failures and runs are append-only; you cannot corrupt prior intents by
-  recording new events.
-- v0.2: `get_repair_brief` includes proven fixes from similar past errors.
-- v0.2: `query_memory` supports natural-language search via FTS5.
+- `memory_id` values are **content-addressable** — same file + prompt + generated code always produce the same ID. Safe to cache across a session.
+- Failures and runs are append-only; you cannot corrupt prior intents by recording new events.
+- `capture_intent` is idempotent — calling it twice with the same inputs returns `duplicate: true`.
+- All tool inputs have size limits — you won't accidentally send multi-megabyte payloads.
+- Error messages and stack traces are truncated before inclusion in AI context (prevents prompt injection).
+- v0.2.1: `get_repair_brief` includes proven fixes from similar past errors (same `error_type`, previously resolved).
+- v0.2.1: `query_memory` supports natural-language FTS5 search with relevance-ranked results and highlighted snippets.
+- v0.2.1: `query_memory` returns true FTS5 match counts (not just the returned slice) when no `status`/`since` filters are active, enabling accurate pagination.
+- v0.2.1: Multi-provider support — works with Claude Code, Cursor, Codex, Windsurf, and any MCP-compatible AI coding tool.
 
 ## Do NOT
 
