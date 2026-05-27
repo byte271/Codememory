@@ -1,0 +1,15 @@
+# Source and tests — only dist/ ships
+src/
+tests/
+*.config.ts
+*.config.mjs
+tsconfig.json
+.gitignore
+.npmrc
+
+# Never publish these
+node_modules/
+coverage/
+*.db
+*.db-shm
+*.db-wal

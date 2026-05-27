@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Environment
+.env*.local
+.env
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Test coverage
+coverage/
+
+# Release packaging (regenerate with scripts/package-source.ps1)
+release/
+
+# Next.js scaffolding — permanently blocked, never belongs in this package
+components/
+styles/
+public/
+app/
+hooks/
+lib/
+next.config.*
+postcss.config.*
+next-env.d.ts
+components.json
+pnpm-workspace.yaml
+tailwind.config.*
+
+# v0 sandbox
+__v0_runtime_loader.js
+__v0_devtools.tsx
+.snowflake/
+.v0-trash/
+.vercel/

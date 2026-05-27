@@ -1,0 +1,56 @@
+{
+  "name": "@opvoid/codememory",
+  "version": "0.2.0",
+  "description": "A runtime behavior memory layer for AI-generated code",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "codememory": "dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "examples"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/bin.ts --format cjs,esm --dts && pnpm run copy-templates",
+    "copy-templates": "node -e \"const fs=require('fs'),path=require('path');const src=path.resolve('src/templates'),dst=path.resolve('dist/templates');fs.mkdirSync(dst,{recursive:true});for(const f of fs.readdirSync(src))fs.copyFileSync(path.join(src,f),path.join(dst,f));console.log('Copied templates ->',dst)\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "ci": "pnpm run check:brand && pnpm run typecheck && pnpm run lint && pnpm test && pnpm run build",
+    "check:brand": "node scripts/check-brand.js",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/index.js",
+    "postinstall": "node -e \"try{require('better-sqlite3')}catch(e){console.log('Rebuilding better-sqlite3...');require('child_process').execSync('pnpm rebuild better-sqlite3',{stdio:'inherit'})}\""
+  },
+  "keywords": [
+    "mcp",
+    "ai",
+    "memory",
+    "runtime",
+    "behavior"
+  ],
+  "author": "byte271",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.1",
+    "better-sqlite3": "^11.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/node": "^20.12.7",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.0",
+    "tsup": "^8.0.2",
+    "typescript": "^5.4.5",
+    "vitest": "^1.5.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
+  }
+}
