@@ -45,6 +45,11 @@ informed instead of speculative.
 
 ## Setup (60 seconds)
 
+> [!NOTE]
+> Due to an npm publishing issue, the npm package version `0.2.2` is equivalent to the project release `0.2.1`.
+>
+> We encountered an issue with the previous npm release and had to republish the package under a new version number. We apologize for the confusion.
+
 ```bash
 npm install -g @opvoid/codememory
 codememory init
