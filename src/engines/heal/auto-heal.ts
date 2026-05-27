@@ -468,7 +468,7 @@ export class AutoHealEngine {
         },
       });
 
-      this.worker.on('message', (msg: { type: string }) => {
+      this.worker.on('message', (msg: { type: string; error?: string }) => {
         if (msg.type === 'check_pending') {
           const maxConcurrent = getAutoHealMaxConcurrent();
           const pendingTasks = this.getPendingTasks(maxConcurrent);
@@ -477,6 +477,8 @@ export class AutoHealEngine {
               logger.error('Auto-heal executeTask error', err, { taskId: task.id })
             );
           }
+        } else if (msg.type === 'error') {
+          logger.warn('Auto-heal worker reported error', { error: msg.error });
         }
       });
 

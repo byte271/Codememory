@@ -4,6 +4,63 @@ All notable changes to Codememory are documented in this file.
 
 ---
 
+## [v0.3.5] — 2026-05-27 — The "Neural Link" Update
+
+### 🚀 Major Features
+
+- **📡 LAN Relay — Zero-Config Team Intelligence**: Codememory instances on the same local network automatically discover each other via mDNS (Multicast DNS). When a teammate fixes a bug or refactors a complex module, their repair brief becomes instantly available to your AI agent. Peer-to-peer sync with no servers and no setup — just enable and discover.
+- **🔒 Privacy-First P2P Architecture**: All data transmitted between peers is encrypted with AES-256-GCM using a pre-shared pairing key. Code intents, execution traces, and repair briefs never leave your local network. End-to-end encryption ensures only peers with the pairing key can read messages.
+- **🛡️ Collective Guardrails — One-Fix-for-All**: When one developer identifies a dangerous pattern and creates a guard rule, that rule is instantly broadcast to the entire team. Every teammate's AI agent now warns about this pattern before generating code — instant team immunity.
+- **🧠 Hive Mind Dashboard**: The Behavioral Time Machine dashboard now includes a team view with connected peers list, shared briefs feed, and a contribution heatmap showing which modules generate the most shared wisdom.
+
+### New CLI Commands
+
+- **`codememory relay start`**: Enable LAN discovery and start sharing experience with your team.
+- **`codememory relay pair`**: Display your pairing key for team setup.
+- **`codememory peers`**: List all active Codememory instances on your local network.
+- **`codememory sync --force`**: Manually pull the latest collective wisdom from peers.
+
+### New MCP Tools (14 total, up from 11)
+
+- **`relay_status`**: Check LAN relay status — connected peers, shared briefs count, pairing key fingerprint.
+- **`share_brief`**: Share a repair brief with the entire team via the encrypted LAN relay.
+- **`broadcast_rule`**: Broadcast a guard rule to all peers for collective immunity.
+
+### Database
+
+- **Migration 005**: Added `peer_nodes`, `shared_briefs`, and `relay_config` tables for distributed team memory.
+
+### Configuration (env vars)
+
+- `CODEMEMORY_RELAY_ENABLED` — enable LAN relay and team sharing (default: false, opt-in)
+- `CODEMEMORY_RELAY_PORT` — relay WebSocket port (default: 4211)
+- `CODEMEMORY_RELAY_PAIRING_KEY` — pre-shared encryption key (auto-generated on first run)
+
+### Technical Details
+
+- **Service Discovery**: Integrated `multicast-dns` for zero-config peer location via `_codememory._tcp` service type.
+- **Relay Protocol**: Custom lightweight P2P protocol built on encrypted WebSockets (AES-256-GCM).
+- **Handshake**: Pairing key fingerprint exchange for mutual verification — mismatched keys close the connection.
+- **Heartbeat**: Ping/pong every 15 seconds to detect dead peers.
+- **Reconnection**: Exponential backoff up to 60 seconds for resilience.
+
+### 🛡️ Bug Fixes & Stability (Rounds 7-8)
+
+#### Critical
+- **#40** `IntentSearchEngine.search()` FTS5 queries now SELECT `i.project_id` — cross-project search was broken because `project_id` was never retrieved from `intent_records`, causing all results to return `null` and the cross-project knowledge graph to be inert.
+- **#41** `RepairProvenance.findSimilarFixes()` queries now SELECT `i.project_id` — same root cause as #40; provenance `mapRow` hardcoded `project_id: null`, silently dropping project context from proven fix results.
+
+#### Medium
+- **#42** `PredictiveGuard.searchGuardRules()` changed silent `catch {}` to log a warning via `logger.warn` — FTS5 parse errors on unusual search patterns were silently swallowed (Rule 06 violation).
+- **#43** `RecordRuntimeTool.safeJsonStringify()` changed silent `catch` to log a warning via `logger.warn` — JSON.stringify failures on circular or non-serializable objects were silently discarded.
+
+#### Low
+- **#44** Heal worker poll loop changed silent `catch {}` to post an error message back to the main thread via `parentPort.postMessage` — communication errors in the background worker were invisible.
+- **#45** `AutoHealEngine.startWorker()` now handles `error` type messages from the worker thread — worker error reports were silently dropped because the main thread only processed `check_pending` messages.
+- **#46** `RepairAssembler.formatCallChain()` changed silent `catch {}` to log a warning via `logger.warn` — malformed `call_chain` JSON in the database was silently ignored instead of surfacing for investigation.
+
+---
+
 ## [v0.3.0] — 2026-05-27
 
 ### 🚀 Major Features

@@ -5,6 +5,9 @@
  *         and cross_project_search for Autonomous Self-Healing,
  *         Proactive Guardrails, and Cross-Project Knowledge Graph.
  *
+ * v0.3.5: Added relay_status, share_brief, and broadcast_rule for
+ *         LAN Relay and Team Neural Link.
+ *
  * Must match CODEMEMORY.md / README so agents call tools that actually exist.
  */
 export const MCP_TOOL_NAMES = {
@@ -20,5 +23,9 @@ export const MCP_TOOL_NAMES = {
   auto_heal_status: 'auto_heal_status',
   predict_issue: 'predict_issue',
   cross_project_search: 'cross_project_search',
+  // ── v0.3.5 ──────────────────────────────────────────────────
+  relay_status: 'relay_status',
+  share_brief: 'share_brief',
+  broadcast_rule: 'broadcast_rule',
 } as const;
 

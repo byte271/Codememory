@@ -125,6 +125,7 @@ export class RecordRuntimeTool {
     try {
       return JSON.stringify(obj) ?? 'null';
     } catch (error) {
+      logger.warn('Failed to JSON.stringify value in safeJsonStringify', { error: error instanceof Error ? error.message : String(error) });
       return JSON.stringify({ error: 'Circular reference or non-serializable data' });
     }
   }

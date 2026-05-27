@@ -257,8 +257,11 @@ export class RepairAssembler {
       if (Array.isArray(parsed)) {
         return parsed.map(String).join(' → ');
       }
-    } catch {
-      // fall through to raw string
+    } catch (err) {
+      // JSON parse error — fall through to return raw string below.
+      // Malformed call_chain JSON is non-critical; the raw string
+      // is still useful for debugging.
+      logger.warn('Failed to parse call_chain JSON, returning raw string', { err: err instanceof Error ? err.message : String(err) });
     }
     return callChain;
   }

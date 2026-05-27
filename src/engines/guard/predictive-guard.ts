@@ -284,8 +284,9 @@ export class PredictiveGuard {
         `).all(ftsQuery) as GuardRule[];
       }
       return rows;
-    } catch {
+    } catch (err) {
       // FTS5 parse errors on unusual input — fall back to exact error_type match
+      logger.warn('FTS5 query failed in searchGuardRules, falling back', { err: err instanceof Error ? err.message : String(err) });
       return [];
     }
   }

@@ -4,6 +4,7 @@ import * as initialMigration from './migrations/001_initial.js';
 import * as cascadeMigration from './migrations/002_cascade_fks.js';
 import * as provenanceMigration from './migrations/003_provenance_fts_lineage.js';
 import * as v3FeaturesMigration from './migrations/004_v3_features.js';
+import * as relayMigration from './migrations/005_relay.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -23,7 +24,7 @@ interface Migration {
  */
 export class DatabaseManager {
   private db: Database.Database;
-  private migrations: Migration[] = [initialMigration, cascadeMigration, provenanceMigration, v3FeaturesMigration];
+  private migrations: Migration[] = [initialMigration, cascadeMigration, provenanceMigration, v3FeaturesMigration, relayMigration];
   /** Cached prepared statements with LRU eviction to bound memory. */
   private stmtCache = new Map<string, Database.Statement>();
   /** Maximum number of cached statements before LRU eviction kicks in. */

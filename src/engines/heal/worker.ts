@@ -27,8 +27,12 @@ async function poll(): Promise<void> {
     try {
       // Signal the main thread to check for pending tasks
       parentPort?.postMessage({ type: 'check_pending' });
-    } catch {
-      // Worker communication errors are non-fatal
+    } catch (err) {
+      // Worker communication errors are non-fatal; the main thread
+      // poll loop continues regardless.
+      if (parentPort) {
+        try { parentPort.postMessage({ type: 'error', error: String(err) }); } catch { /* best-effort */ }
+      }
     }
 
     // Wait for the next poll interval or until shutdown is received

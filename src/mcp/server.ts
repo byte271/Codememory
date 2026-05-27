@@ -24,6 +24,10 @@ import { LineageEngine } from '../engines/intent/lineage.js';
 import { AutoHealEngine } from '../engines/heal/auto-heal.js';
 import { PredictiveGuard } from '../engines/guard/predictive-guard.js';
 import { CrossProjectGraph } from '../engines/knowledge/cross-project.js';
+import { RelayEngine } from '../engines/relay/engine.js';
+import { RelayStatusTool } from './tools/relay_status.js';
+import { ShareBriefTool } from './tools/share_brief.js';
+import { BroadcastRuleTool } from './tools/broadcast_rule.js';
 import { DashboardServer } from '../web/server.js';
 import { logger } from '../utils/logger.js';
 import {
@@ -37,13 +41,16 @@ import {
   AutoHealStatusInput,
   PredictIssueInput,
   CrossProjectSearchInput,
+  ShareBriefInput,
+  BroadcastRuleInput,
 } from '../types/index.js';
 import { MCP_TOOL_NAMES } from './tool-names.js';
 import { formatToolError } from '../utils/errors.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
-import { isAutoHealEnabled, isDashboardEnabled, getDashboardPort } from '../config.js';
+import { hostname as osHostname } from 'node:os';
+import { isAutoHealEnabled, isDashboardEnabled, getDashboardPort, isRelayEnabled, getRelayPort } from '../config.js';
 
 /** Resolve worker script path across CJS/ESM builds. */
 function resolveWorkerPath(): string {
@@ -109,6 +116,12 @@ export class CodememoryServer {
   /** v0.3 web dashboard */
   private dashboard: DashboardServer | null = null;
 
+  /** v0.3.5 relay engine */
+  private relay: RelayEngine | null = null;
+  private relayStatusTool: RelayStatusTool | null = null;
+  private shareBriefTool: ShareBriefTool | null = null;
+  private broadcastRuleTool: BroadcastRuleTool | null = null;
+
   /**
    * Initializes the MCP server and all its tools.
    */
@@ -116,7 +129,7 @@ export class CodememoryServer {
     this.server = new Server(
       {
         name: 'codememory',
-        version: '0.3.0',
+        version: '0.3.5',
       },
       {
         capabilities: {
@@ -153,6 +166,12 @@ export class CodememoryServer {
     this.autoHealStatusTool = new AutoHealStatusTool(this.autoHealEngine, runtimeQueries);
     this.predictIssueTool = new PredictIssueTool(this.predictiveGuard, this.crossProjectGraph);
     this.crossProjectSearchTool = new CrossProjectSearchTool(this.crossProjectGraph);
+
+    // v0.3.5 tools — initialized lazily when relay is enabled
+    this.relay = null;
+    this.relayStatusTool = null;
+    this.shareBriefTool = null;
+    this.broadcastRuleTool = null;
 
     this.setupTools();
   }
@@ -330,6 +349,54 @@ export class CodememoryServer {
               required: ['query'],
             },
           },
+          // ── v0.3.5 tools ──────────────────────────────────────────
+          {
+            name: MCP_TOOL_NAMES.relay_status,
+            description:
+              'v0.3.5: Check LAN relay status — see how many peers are connected, ' +
+              'how many briefs have been shared, and the pairing key fingerprint. ' +
+              'Use this to verify team intelligence sharing is active.',
+            inputSchema: {
+              type: 'object',
+              properties: {},
+            },
+          },
+          {
+            name: MCP_TOOL_NAMES.share_brief,
+            description:
+              'v0.3.5: Share a repair brief with the entire team via the LAN relay. ' +
+              'When you fix a bug, push the fix so teammates\' AI agents learn from it. ' +
+              'One developer\'s resolution becomes the whole team\'s immunity.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                failure_id: { type: 'string', description: 'The failure that was resolved.' },
+                error_type: { type: 'string', description: 'Error type (e.g., TypeError).' },
+                error_pattern: { type: 'string', description: 'Concise pattern description of the error.' },
+                suggestion: { type: 'string', description: 'Suggested fix approach to share with the team.' },
+                approach: { type: 'string', description: 'Description of the fix approach used.' },
+                diff_summary: { type: 'string', description: 'Summary of what changed in the fix.' },
+              },
+              required: ['failure_id', 'error_type', 'error_pattern', 'suggestion'],
+            },
+          },
+          {
+            name: MCP_TOOL_NAMES.broadcast_rule,
+            description:
+              'v0.3.5: Broadcast a guard rule to the entire team. ' +
+              'When you identify a dangerous coding pattern, share it so every teammate\'s ' +
+              'AI agent warns about it before writing code. One person hits a wall, ' +
+              'the whole team gets the map.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                error_type: { type: 'string', description: 'Error type (e.g., TypeError, RangeError).' },
+                error_pattern: { type: 'string', description: 'Pattern description to detect in proposed code.' },
+                suggestion: { type: 'string', description: 'Suggested alternative approach.' },
+              },
+              required: ['error_type', 'error_pattern', 'suggestion'],
+            },
+          },
         ],
       };
     });
@@ -374,6 +441,19 @@ export class CodememoryServer {
         if (name === MCP_TOOL_NAMES.cross_project_search) {
           return { content: [{ type: 'text', text: JSON.stringify(await this.crossProjectSearchTool.execute(args as unknown as CrossProjectSearchInput)) }] };
         }
+        // ── v0.3.5 tools ──────────────────────────────────────────
+        if (name === MCP_TOOL_NAMES.relay_status) {
+          if (!this.relayStatusTool) throw new Error('Relay is not enabled. Start the server with CODEMEMORY_RELAY_ENABLED=true.');
+          return { content: [{ type: 'text', text: JSON.stringify(await this.relayStatusTool.execute()) }] };
+        }
+        if (name === MCP_TOOL_NAMES.share_brief) {
+          if (!this.shareBriefTool) throw new Error('Relay is not enabled. Start the server with CODEMEMORY_RELAY_ENABLED=true.');
+          return { content: [{ type: 'text', text: JSON.stringify(await this.shareBriefTool.execute(args as unknown as ShareBriefInput)) }] };
+        }
+        if (name === MCP_TOOL_NAMES.broadcast_rule) {
+          if (!this.broadcastRuleTool) throw new Error('Relay is not enabled. Start the server with CODEMEMORY_RELAY_ENABLED=true.');
+          return { content: [{ type: 'text', text: JSON.stringify(await this.broadcastRuleTool.execute(args as unknown as BroadcastRuleInput)) }] };
+        }
 
         throw new Error(`Unknown tool: ${name}`);
       } catch (error) {
@@ -395,7 +475,7 @@ export class CodememoryServer {
     try {
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
-      logger.info('Codememory MCP server running on stdio (v0.3.0)');
+      logger.info('Codememory MCP server running on stdio (v0.3.5)');
 
       // Start auto-heal background worker
       if (isAutoHealEnabled()) {
@@ -410,6 +490,28 @@ export class CodememoryServer {
       if (isDashboardEnabled()) {
         this.dashboard = new DashboardServer(this.dbManager, getDashboardPort());
         this.dashboard.start();
+      }
+
+      // Start relay if enabled (v0.3.5)
+      if (isRelayEnabled()) {
+        try {
+          const relayPort = getRelayPort();
+          const hostname = osHostname();
+          this.relay = new RelayEngine(this.dbManager, relayPort, hostname, 'unknown', '0.3.5');
+          this.relay.start();
+
+          // Initialize relay tools
+          this.relayStatusTool = new RelayStatusTool(this.relay);
+          this.shareBriefTool = new ShareBriefTool(this.relay);
+          this.broadcastRuleTool = new BroadcastRuleTool(this.relay);
+
+          logger.info('Codememory LAN relay started (Neural Link)', {
+            port: relayPort,
+            fingerprint: this.relay.getFingerprint(),
+          });
+        } catch (error) {
+          logger.error('Failed to start LAN relay', error);
+        }
       }
     } catch (error) {
       logger.error('Failed to start Codememory server', error);
@@ -426,6 +528,9 @@ export class CodememoryServer {
       await this.autoHealEngine.stopWorker();
       if (this.dashboard) {
         await this.dashboard.stop();
+      }
+      if (this.relay) {
+        await this.relay.stop();
       }
       await this.server.close();
       this.dbManager.close();

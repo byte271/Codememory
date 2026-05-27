@@ -98,6 +98,30 @@ export function getGuardConfidenceThreshold(): number {
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 0.3;
 }
 
+// ── v0.3.5: LAN Relay configuration ───────────────────────────────────
+
+/**
+ * Whether the LAN relay is enabled. Default: false (opt-in for security).
+ *
+ * Override with CODEMEMORY_RELAY_ENABLED (set to "true" or "1" to enable).
+ */
+export function isRelayEnabled(): boolean {
+  const raw = process.env.CODEMEMORY_RELAY_ENABLED;
+  return raw === 'true' || raw === '1';
+}
+
+/**
+ * TCP port for the relay WebSocket server. Default: 4211.
+ *
+ * Override with CODEMEMORY_RELAY_PORT.
+ */
+export function getRelayPort(): number {
+  const raw = process.env.CODEMEMORY_RELAY_PORT;
+  if (!raw) return 4211;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 && parsed < 65536 ? parsed : 4211;
+}
+
 // ── v0.2.0: Input size limits to prevent DoS and DB bloat ──────────────
 
 export const MAX_PROMPT_LENGTH = 65_536;

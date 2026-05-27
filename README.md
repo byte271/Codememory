@@ -48,15 +48,11 @@ reintroducing known bugs (proactive guardrails), **auto-heals** failures
 by generating patches from historical memory (autonomous self-repair),
 and **cross-references** learnings from all your projects (cross-project
 knowledge graph). A built-in web **dashboard** visualizes the full
-lifecycle of your code: error trends, fix effectiveness, and a
-chronological event timeline.
+lifecycle of your code. And with the **LAN Relay**, your entire team's
+Codememory instances automatically share fixes and guard rules — no cloud,
+no setup, just encrypted peer-to-peer knowledge sharing.
 
 ## Setup (60 seconds)
-
-> [!NOTE]
-> Due to an npm publishing issue, the npm package version `0.2.2` is equivalent to the project release `0.2.1`.
->
-> We encountered an issue with the previous npm release and had to republish the package under a new version number. We apologize for the confusion.
 
 ```bash
 npm install -g @opvoid/codememory
@@ -80,8 +76,9 @@ code and fetch repair briefs before fixing bugs.
 
 - `.mcp.json` — registers Codememory as an MCP server for your provider (Claude Code, Cursor, Codex, or Windsurf).
 - `CODEMEMORY.md` — rules that tell the AI agent when to call which tool:
-  all 11 MCP tools covering capture, runtime, failure, resolution,
-  query, repair, lineage, auto-heal, guardrails, and cross-project search.
+  all 14 MCP tools covering capture, runtime, failure, resolution,
+  query, repair, lineage, auto-heal, guardrails, cross-project search,
+  and LAN relay sharing.
 
 Existing files are preserved by default. Pass `--force` to overwrite.
 
@@ -95,6 +92,10 @@ Existing files are preserved by default. Pass `--force` to overwrite.
 | `codememory` | Start the MCP server (with auto-heal worker + optional dashboard) |
 | `codememory dashboard` | Start the Behavioral Time Machine web UI standalone |
 | `codememory heal` | Manually trigger auto-healing for all unresolved failures |
+| `codememory relay start` | Enable LAN relay for team intelligence sharing |
+| `codememory relay pair` | Display your pairing key for team setup |
+| `codememory peers` | List all active Codememory instances on your LAN |
+| `codememory sync --force` | Manually pull collective wisdom from peers |
 | `codememory --version` | Print the version |
 | `codememory --help` | Print available commands |
 
@@ -111,6 +112,9 @@ everything has sensible defaults.
 | `CODEMEMORY_DASHBOARD_ENABLED` | `false` | Enable the web dashboard (opt-in) |
 | `CODEMEMORY_DASHBOARD_PORT` | `4210` | Dashboard HTTP port |
 | `CODEMEMORY_GUARD_CONFIDENCE_THRESHOLD` | `0.3` | Minimum confidence to surface guard warnings |
+| `CODEMEMORY_RELAY_ENABLED` | `false` | Enable LAN relay and team sharing (opt-in) |
+| `CODEMEMORY_RELAY_PORT` | `4211` | Relay WebSocket port |
+| `CODEMEMORY_RELAY_PAIRING_KEY` | auto-generated | Pre-shared encryption key for team peers |
 | `CODEMEMORY_MAX_SNAPSHOTS_PER_INTENT` | `100` | Max runtime snapshots retained per intent |
 | `LOG_LEVEL` | `info` | Log verbosity (trace/debug/info/warn/error) |
 
@@ -128,7 +132,7 @@ import { RuntimeObserver } from '@opvoid/codememory'
 const observed = observer.observe(yourFunction, 'functionName')
 ```
 
-## The MCP tools (all 11)
+## The MCP tools (all 14)
 
 | Tool | Purpose |
 |------|---------|
@@ -143,6 +147,9 @@ const observed = observer.observe(yourFunction, 'functionName')
 | `auto_heal_status` | **v0.3** — Check the status of an auto-heal task (pending/running/completed/failed). |
 | `predict_issue` | **v0.3** — Proactive guardrails: check proposed code BEFORE writing to prevent re-introducing known bugs. |
 | `cross_project_search` | **v0.3** — Search failures and proven fixes across ALL your Codememory projects. |
+| `relay_status` | **v0.3.5** — Check LAN relay status: connected peers, shared briefs, pairing fingerprint. |
+| `share_brief` | **v0.3.5** — Share a repair brief with the team via encrypted LAN relay. |
+| `broadcast_rule` | **v0.3.5** — Broadcast a guard rule to all team peers for collective immunity. |
 
 ## The repair brief
 
@@ -205,6 +212,30 @@ visualizes the full lifecycle of your code:
 - Dark-themed, auto-refreshing, no external CDN dependencies
 
 All data is local. Nothing leaves your machine.
+
+## LAN Relay — Team Neural Link (v0.3.5)
+
+```bash
+export CODEMEMORY_RELAY_ENABLED=true
+codememory relay start
+```
+
+Codememory instances on the same local network automatically discover each
+other via mDNS and share knowledge through encrypted WebSocket connections.
+When one developer fixes a bug, every teammate's AI agent learns from it.
+
+- **Zero-config discovery**: mDNS automatically finds peers — no IP addresses,
+  no servers, no cloud.
+- **End-to-end encryption**: AES-256-GCM with a pre-shared pairing key.
+  Your code's runtime behavior never leaves your local network.
+- **Collective guardrails**: When you create a guard rule for a dangerous pattern,
+  it's instantly broadcast to every peer. One person hits a wall, the whole
+  team gets the map.
+- **Hive Mind dashboard**: The dashboard gains a team view showing connected
+  peers, shared briefs, and a contribution heatmap.
+
+Run `codememory relay pair` to display your pairing key for teammates,
+and `codememory peers` to see who's online.
 
 ## Media
 

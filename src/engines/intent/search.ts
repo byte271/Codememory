@@ -55,7 +55,7 @@ export class IntentSearchEngine {
           SELECT
             i.id, i.created_at, i.file_path, i.prompt, i.generated,
             i.ai_tool, i.language, i.status,
-            i.parent_intent_id, i.replacement_reason,
+            i.parent_intent_id, i.replacement_reason, i.project_id,
             snippet(intent_fts, -1, '<mark>', '</mark>', '…', 40) AS snippet,
             rank
           FROM intent_fts
@@ -73,7 +73,7 @@ export class IntentSearchEngine {
         SELECT
           i.id, i.created_at, i.file_path, i.prompt, i.generated,
           i.ai_tool, i.language, i.status,
-          i.parent_intent_id, i.replacement_reason,
+          i.parent_intent_id, i.replacement_reason, i.project_id,
           snippet(intent_fts, -1, '<mark>', '</mark>', '…', 40) AS snippet,
           rank
         FROM intent_fts
@@ -171,7 +171,7 @@ export class IntentSearchEngine {
       status: row.status as IntentRecord['status'],
       parent_intent_id: row.parent_intent_id,
       replacement_reason: row.replacement_reason,
-      project_id: null,
+      project_id: row.project_id ?? null,
     };
     return {
       record,
@@ -193,6 +193,7 @@ interface FullTextRow {
   status: string;
   parent_intent_id: string | null;
   replacement_reason: string;
+  project_id: string | null;
   snippet: string | null;
   rank: number;
 }

@@ -1,11 +1,11 @@
-# Codememory v0.3.0 — Runtime Behavior Memory
+# Codememory v0.3.5 — Runtime Behavior Memory
 
 This project uses **Codememory** (`@opvoid/codememory`) as an MCP server. Codememory remembers
 *what AI-generated code was supposed to do*, *what it actually did at runtime*,
 and *what failed*. You — the AI agent — MUST use the Codememory MCP tools as
 described below. These rules are not optional.
 
-The eleven Codememory tools registered via MCP are:
+The fourteen Codememory tools registered via MCP are:
 
 - `capture_intent`        — record the intent behind code you generate
 - `record_runtime`        — record an observed function execution (entry/exit)
@@ -18,6 +18,9 @@ The eleven Codememory tools registered via MCP are:
 - `auto_heal_status`      — v0.3: check the status of an auto-heal task
 - `predict_issue`         — v0.3: proactive guardrails — check code BEFORE writing
 - `cross_project_search`  — v0.3: search failures/fixes across ALL your projects
+- `relay_status`         — v0.3.5: check LAN relay and team peer status
+- `share_brief`           — v0.3.5: share a repair brief with the team via LAN
+- `broadcast_rule`        — v0.3.5: broadcast a guard rule to all team peers
 
 ## Mandatory tool-call rules (act on these automatically)
 
@@ -115,6 +118,33 @@ other projects. This applies lessons learned across your entire code portfolio.
 Trigger: when working with unfamiliar libraries or patterns.
 Action: `cross_project_search` before writing code with new dependencies.
 
+### Rule K — v0.3.5: CHECK team relay status
+When starting a coding session or before relying on cross-project features,
+call `relay_status` to verify the LAN relay is active and see how many
+peers are sharing knowledge. If peers are online, your AI agent has access
+to the team's collective wisdom.
+
+Trigger: beginning of a coding session, or when unsure if team sync is active.
+Action: `relay_status` to check peer count and briefs received.
+
+### Rule L — v0.3.5: SHARE your fixes with the team
+After successfully fixing a bug and calling `log_resolution`, call `share_brief`
+to broadcast the fix to the entire team via the encrypted LAN relay. Include
+the `error_type`, `error_pattern`, and `suggestion` so teammates' AI agents
+learn from your fix without encountering the same bug.
+
+Trigger: after `log_resolution` when relay is active.
+Action: `share_brief` to push your fix to the team.
+
+### Rule M — v0.3.5: BROADCAST dangerous patterns
+When you identify a dangerous coding pattern (e.g., a common pitfall with
+a library), call `broadcast_rule` to share the guard rule with all peers.
+Every teammate's AI agent will now warn about this pattern before generating
+code — instant team immunity.
+
+Trigger: when you discover a reusable guard rule or dangerous pattern.
+Action: `broadcast_rule` to protect the entire team.
+
 ### Rule J — v0.3: AUTO-HEAL when failures mount
 After logging a failure, call `auto_heal_trigger` with the `failure_id`.
 Codememory will generate a patch from historical memory and proven fixes.
@@ -133,9 +163,11 @@ Action: `auto_heal_trigger`, then review with `auto_heal_status`.
 | Just finished writing a function              | `capture_intent`        |
 | "It crashes" / paste of stack trace           | `log_failure` + `auto_heal_trigger` |
 | "Fix the bug in foo.ts"                       | `get_repair_brief`      |
-| Bug is now fixed                              | `log_resolution`        |
+| Bug is now fixed                              | `log_resolution` + `share_brief` |
 | "Refactor / replace the code in bar.ts"       | `get_code_lineage`      |
 | Manually instrumenting a function             | `record_runtime`        |
+| Starting a new coding session                 | `relay_status`          |
+| Found a dangerous pattern to warn about       | `broadcast_rule`        |
 
 ## Guarantees
 
@@ -151,6 +183,9 @@ Action: `auto_heal_trigger`, then review with `auto_heal_status`.
 - v0.3.0: `predict_issue` provides proactive guardrails from learned patterns.
 - v0.3.0: `cross_project_search` shares knowledge across all projects.
 - v0.3.0: `auto_heal_trigger` generates patches from historical memory.
+- v0.3.5: `relay_status` checks LAN peer connectivity and team sync.
+- v0.3.5: `share_brief` broadcasts fixes to the team via encrypted relay.
+- v0.3.5: `broadcast_rule` shares guard rules for collective immunity.
 
 ## Do NOT
 
@@ -161,3 +196,4 @@ Action: `auto_heal_trigger`, then review with `auto_heal_status`.
 - Do not replace tracked code without setting `parent_intent_id`.
 - Do not skip `predict_issue` — preemptive prevention beats post-mortem repair.
 - Do not ignore cross-project warnings — they're lessons already paid for.
+- Do not forget to `share_brief` after resolving a bug — your fix protects the team.

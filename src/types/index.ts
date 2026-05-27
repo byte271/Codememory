@@ -365,3 +365,73 @@ export interface ToolErrorPayload {
     message: string;
   };
 }
+
+// ── v0.3.5 Relay types ───────────────────────────────────────────────────
+
+/** v0.3.5: Share brief request input. */
+export interface ShareBriefInput {
+  failure_id: string;
+  error_type: string;
+  error_pattern: string;
+  suggestion: string;
+  approach?: string;
+  diff_summary?: string;
+}
+
+/** v0.3.5: Share brief response. */
+export interface ShareBriefOutput {
+  shared_id: string;
+  peers_reached: number;
+}
+
+/** v0.3.5: Broadcast rule request input. */
+export interface BroadcastRuleInput {
+  error_type: string;
+  error_pattern: string;
+  suggestion: string;
+}
+
+/** v0.3.5: Broadcast rule response. */
+export interface BroadcastRuleOutput {
+  rule_id: string;
+  peers_reached: number;
+}
+
+/** v0.3.5: Relay status MCP output. */
+export interface RelayStatusOutput {
+  status: {
+    enabled: boolean;
+    running: boolean;
+    port: number;
+    pairing_configured: boolean;
+    peers_online: number;
+    peers_total: number;
+    briefs_shared: number;
+    briefs_received: number;
+    last_sync_at: number | null;
+  };
+  peers: Array<{
+    id: string;
+    hostname: string;
+    address: string;
+    port: number;
+    last_seen_at: number;
+    last_sync_at: number | null;
+    is_online: number;
+    project_name: string | null;
+    discovered_at: number;
+  }>;
+  recent_briefs: Array<{
+    id: string;
+    peer_id: string;
+    failure_id: string;
+    error_type: string;
+    error_pattern: string;
+    suggestion: string;
+    approach: string | null;
+    diff_summary: string | null;
+    project_name: string | null;
+    shared_at: number;
+    applied: number;
+  }>;
+}

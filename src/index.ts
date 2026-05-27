@@ -17,6 +17,12 @@ export { CrossProjectGraph } from './engines/knowledge/cross-project.js';
 export { BehaviorTimelineAggregator } from './engines/timeline/aggregator.js';
 export { DashboardServer } from './web/server.js';
 
+// v0.3.5 exports
+export { RelayEngine } from './engines/relay/engine.js';
+export { encrypt, decrypt, generatePairingKey, getPairingFingerprint } from './engines/relay/encryption.js';
+export { RelayDiscovery } from './engines/relay/discovery.js';
+export { RelayServer } from './engines/relay/relay.js';
+
 export { DatabaseManager } from './store/database.js';
 export { logger } from './utils/logger.js';
 export { sanitizer } from './utils/sanitizer.js';

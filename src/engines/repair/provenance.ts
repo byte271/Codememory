@@ -144,7 +144,8 @@ export class RepairProvenance {
         f.repair_status,
         i.id          AS int_id,   i.created_at,  i.file_path,
         i.prompt,     i.generated, i.ai_tool,     i.language,
-        i.status,     i.parent_intent_id,          i.replacement_reason
+        i.status,     i.parent_intent_id,          i.replacement_reason,
+        i.project_id
       FROM resolutions r
       JOIN failures f         ON r.failure_id = f.id
       JOIN intent_records i   ON r.fixing_intent_id = i.id
@@ -178,7 +179,8 @@ export class RepairProvenance {
         f.repair_status,
         i.id          AS int_id,   i.created_at,  i.file_path,
         i.prompt,     i.generated, i.ai_tool,     i.language,
-        i.status,     i.parent_intent_id,          i.replacement_reason
+        i.status,     i.parent_intent_id,          i.replacement_reason,
+        i.project_id
       FROM resolutions r
       JOIN failures f         ON r.failure_id = f.id
       JOIN intent_records i   ON r.fixing_intent_id = i.id
@@ -246,7 +248,7 @@ export class RepairProvenance {
       status: row.status,
       parent_intent_id: row.parent_intent_id,
       replacement_reason: row.replacement_reason,
-      project_id: null,
+      project_id: row.project_id ?? null,
     };
 
     return { resolution, intent, failure, match_context: matchContext };
@@ -280,4 +282,5 @@ interface ProvenanceRow {
   status: 'active' | 'deprecated' | 'replaced';
   parent_intent_id: string | null;
   replacement_reason: string;
+  project_id: string | null;
 }

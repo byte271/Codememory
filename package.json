@@ -1,7 +1,7 @@
 {
   "name": "@opvoid/codememory",
-  "version": "0.3.0",
-  "description": "A runtime behavior memory layer for AI-generated code — captures intent, records runtime traces, learns from failures, and auto-heals with proven fixes across all your projects",
+  "version": "0.3.5",
+  "description": "A runtime behavior memory layer for AI-generated code — captures intent, records runtime traces, learns from failures, auto-heals with proven fixes, and shares team intelligence via encrypted LAN relay",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -36,7 +36,14 @@
     "observability",
     "sqlite",
     "cross-project",
-    "lineage"
+    "lineage",
+    "relay",
+    "p2p",
+    "mdns",
+    "lan",
+    "team",
+    "encrypted",
+    "peer-to-peer"
   ],
   "author": "byte271",
   "license": "MIT",
@@ -48,12 +55,16 @@
     "@modelcontextprotocol/sdk": "^1.0.1",
     "better-sqlite3": "^11.0.0",
     "express": "^4.21.0",
+    "multicast-dns": "^7.2.5",
+    "ws": "^8.21.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.10",
     "@types/express": "^4.17.25",
+    "@types/multicast-dns": "^7.2.4",
     "@types/node": "^20.12.7",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.0",

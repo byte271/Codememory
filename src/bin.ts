@@ -11,7 +11,9 @@ import { RepairAssembler } from './engines/repair/assembler.js';
 import { RepairProvenance } from './engines/repair/provenance.js';
 import { logger } from './utils/logger.js';
 import { runInit, resolveTemplateDir, PROVIDERS, Provider } from './cli/init.js';
-import { getDashboardPort } from './config.js';
+import { getDashboardPort, getRelayPort } from './config.js';
+import { RelayEngine } from './engines/relay/engine.js';
+import * as os from 'node:os';
 
 /**
  * Resolve the directory of this binary at runtime, working under both
@@ -184,10 +186,196 @@ async function handleHeal(): Promise<void> {
 }
 
 /**
+ * Handle the `relay` subcommands.
+ */
+function handleRelay(argv: string[]): void {
+  const sub = argv[0];
+
+  if (sub === 'pair') {
+    // Display the pairing key for team sharing
+    const dbManager = new DatabaseManager();
+    const row = dbManager.prepare(
+      "SELECT value FROM relay_config WHERE key = 'pairing_key'"
+    ).get() as { value: string } | undefined;
+
+    if (row?.value) {
+      console.log('');
+      console.log('🔑 Your Codememory Pairing Key:');
+      console.log(`   ${row.value}`);
+      console.log('');
+      console.log('Share this key with your team members. They should set:');
+      console.log('   export CODEMEMORY_RELAY_PAIRING_KEY=<your-key>');
+      console.log('');
+      console.log('Or run on their machine:');
+      console.log('   codememory relay pair --set <your-key>');
+      console.log('');
+    } else {
+      console.log('No pairing key found. Start the relay first with:');
+      console.log('  codememory relay start');
+    }
+
+    dbManager.close();
+    return;
+  }
+
+  if (sub === 'start' || !sub) {
+    // Start relay in standalone mode
+    const port = getRelayPort();
+    const hostname = os.hostname();
+    const dbManager = new DatabaseManager();
+
+    const relay = new RelayEngine(dbManager, port, hostname, 'unknown', '0.3.5');
+    relay.start();
+
+    const fingerprint = relay.getFingerprint();
+
+    console.log('');
+    console.log('📡 Codememory Neural Link — LAN Relay');
+    console.log(`   Relay active on port ${port}`);
+    console.log(`   Hostname: ${hostname}`);
+    console.log(`   Fingerprint: ${fingerprint}`);
+    console.log('');
+    console.log('Run `codememory relay pair` on another terminal to see your pairing key.');
+    console.log('Press Ctrl+C to stop.');
+    console.log('');
+
+    const shutdown = async () => {
+      await relay.stop();
+      dbManager.close();
+      process.exit(0);
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+    return;
+  }
+
+  console.log(`Unknown relay subcommand: ${sub}`);
+  console.log('Usage: codememory relay [start|pair]');
+}
+
+/**
+ * Handle the `peers` command — lists LAN peers.
+ */
+function handlePeers(): void {
+  const dbManager = new DatabaseManager();
+  const peers = dbManager.prepare(
+    'SELECT * FROM peer_nodes ORDER BY last_seen_at DESC'
+  ).all() as Array<{
+    hostname: string;
+    address: string;
+    port: number;
+    is_online: number;
+    project_name: string | null;
+    last_seen_at: number;
+    last_sync_at: number | null;
+  }>;
+
+  if (peers.length === 0) {
+    console.log('');
+    console.log('No peers discovered yet.');
+    console.log('');
+    console.log('To enable LAN discovery:');
+    console.log('  codememory relay start');
+    console.log('');
+    dbManager.close();
+    return;
+  }
+
+  const online = peers.filter((p) => p.is_online === 1);
+  const offline = peers.filter((p) => p.is_online === 0);
+
+  console.log('');
+  console.log(`🧠 Active Codememory instances on your LAN: ${online.length}`);
+  console.log('');
+
+  if (online.length > 0) {
+    console.log('  Online:');
+    for (const p of online) {
+      const ago = Math.round((Date.now() - p.last_seen_at) / 1000);
+      console.log(`    ● ${p.hostname} — ${p.address}:${p.port} — ${p.project_name ?? 'unknown'} (${ago}s ago)`);
+    }
+    console.log('');
+  }
+
+  if (offline.length > 0) {
+    console.log('  Offline (last seen):');
+    for (const p of offline) {
+      console.log(`    ○ ${p.hostname} — ${p.project_name ?? 'unknown'}`);
+    }
+    console.log('');
+  }
+
+  dbManager.close();
+}
+
+/**
+ * Handle the `sync` command — manually pulls collective wisdom.
+ */
+function handleSync(argv: string[]): void {
+  const force = argv.includes('--force') || argv.includes('-f');
+  const dbManager = new DatabaseManager();
+
+  if (!force) {
+    console.log('');
+    console.log('Sync requires --force for manual pulls. Auto-sync runs in the background.');
+    console.log('');
+    console.log('Usage: codememory sync --force');
+    console.log('');
+    dbManager.close();
+    return;
+  }
+
+  const port = getRelayPort();
+  const hostname = os.hostname();
+  const relay = new RelayEngine(dbManager, port, hostname, 'unknown', '0.3.5');
+  relay.start();
+
+  // Give discovery time to find peers
+  console.log('');
+  console.log('🔄 Scanning LAN for peers...');
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const cleanup = () => {
+    if (timer) clearTimeout(timer);
+    process.removeAllListeners('SIGINT');
+    process.removeAllListeners('SIGTERM');
+    relay.stop().then(() => {
+      dbManager.close();
+      process.exit(0);
+    });
+  };
+
+  // Handle Ctrl+C during the sync window
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+
+  timer = setTimeout(() => {
+    const status = relay.getStatus();
+    const peers = relay.getPeers();
+
+    console.log('');
+    console.log(`   Peers found: ${peers.length}`);
+    console.log(`   Briefs received: ${status.briefs_received}`);
+    console.log(`   Briefs shared: ${status.briefs_shared}`);
+    console.log('');
+
+    if (peers.length > 0) {
+      console.log('Collective wisdom synced! Your AI agent now has access to team learnings.');
+    } else {
+      console.log('No peers found. Make sure teammates are running `codememory relay start`.');
+    }
+    console.log('');
+
+    relay.stop().finally(() => dbManager.close());
+  }, 3000);
+}
+
+/**
  * Print top-level CLI help.
  */
 function printHelp(): void {
-  console.log(`codememory v0.3.0 — Runtime Behavior Memory for AI-generated code
+  console.log(`codememory v0.3.5 — Runtime Behavior Memory for AI-generated code
 
 Usage:
   codememory                              Run the MCP server (stdio).
@@ -196,13 +384,18 @@ Usage:
   codememory init --force                 Overwrite existing files.
   codememory dashboard                    Start the Behavioral Time Machine web UI.
   codememory heal                         List unresolved failures for auto-healing.
+  codememory relay start                  Enable LAN relay for team intelligence sharing.
+  codememory relay pair                   Display your pairing key for team setup.
+  codememory peers                        List all active Codememory instances on your LAN.
+  codememory sync --force                 Manually pull collective wisdom from peers.
   codememory --help                       Show this message.
+  codememory --version                    Print the version.
 
-v0.3.0 Features:
-  🤖 Autonomous Self-Healing         Auto-generate patches from failures
-  🛡️ Proactive Guardrails            Predict issues before code is written
-  🔗 Cross-Project Knowledge Graph   Share learnings across projects
-  ⏱️ Behavioral Time Machine         Visual timeline of code evolution
+v0.3.5 Features:
+  📡 LAN Relay                        Zero-config team intelligence via LAN
+  🔒 Privacy-First P2P                End-to-end encrypted peer sharing
+  🛡️ Collective Guardrails            One-fix-for-all rule broadcasting
+  🧠 Hive Mind Dashboard              Team-view timeline and contribution heatmap
 `);
 }
 
@@ -211,6 +404,9 @@ v0.3.0 Features:
  *   - `init`            -> scaffold project files
  *   - `dashboard`       -> start the visual timeline UI
  *   - `heal`            -> list unresolved failures
+ *   - `relay`           -> relay subcommands (start, pair)
+ *   - `peers`           -> list LAN peers
+ *   - `sync`            -> manual sync from peers
  *   - `--help` / `-h`   -> print help
  *   - (none)            -> start the MCP server (default)
  */
@@ -229,6 +425,18 @@ async function run(): Promise<void> {
     }
     if (cmd === 'heal') {
       await handleHeal();
+      return;
+    }
+    if (cmd === 'relay') {
+      handleRelay(argv.slice(1));
+      return;
+    }
+    if (cmd === 'peers') {
+      handlePeers();
+      return;
+    }
+    if (cmd === 'sync') {
+      handleSync(argv.slice(1));
       return;
     }
     if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
